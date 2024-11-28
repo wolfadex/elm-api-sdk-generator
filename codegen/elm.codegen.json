@@ -13,7 +13,8 @@
             "justinmimbs/date": "4.1.0",
             "elm/time": "1.0.0",
             "elm/parser": "1.1.0",
-            "wolfadex/elm-rfc3339": "2.0.0"
+            "wolfadex/elm-rfc3339": "2.0.0",
+            "folkertdev/elm-int64": "1.0.0"
         },
         "local": [
             "helpers"

@@ -1,0 +1,56 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Codegen",
+    "description": "",
+    "license": { "name": "" },
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "health_handler",
+        "responses": { "200": { "description": "" } }
+      }
+    },
+    "/stats": {
+      "get": {
+        "operationId": "stats_handler",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StatsData" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Data1": {
+        "type": "object",
+        "required": ["value2", "value3"],
+        "properties": {
+          "value2": { "type": "integer", "format": "int32", "minimum": 0 },
+          "value3": { "type": "integer", "format": "int64", "minimum": 0 }
+        }
+      },
+      "StatsData": {
+        "type": "object",
+        "properties": {
+          "data1": {
+            "oneOf": [
+              { "type": "null" },
+              { "$ref": "#/components/schemas/Data1" }
+            ]
+          },
+          "value1": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

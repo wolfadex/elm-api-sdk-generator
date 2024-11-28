@@ -51,12 +51,14 @@ import Elm
 import Elm.Annotation
 import Elm.Op
 import Gen.Date
+import Gen.Int64
 import Gen.Json.Decode
 import Gen.Json.Encode
 import Gen.Maybe
 import Gen.Parser.Advanced
 import Gen.Result
 import Gen.Rfc3339
+import Gen.String
 import Gen.Time
 import Gen.Url
 import OpenApi
@@ -186,6 +188,7 @@ defaultFormats =
     [ dateTimeFormat
     , dateFormat
     , uriFormat
+    , int64Format
     ]
 
 
@@ -289,6 +292,25 @@ uriFormat =
                 )
     , sharedDeclarations = []
     , requiresPackages = [ "justinmimbs/date" ]
+    }
+
+
+int64Format : Format
+int64Format =
+    { basicType = Common.Integer
+    , format = "int64"
+    , annotation = Gen.Int64.annotation_.int64
+    , encode =
+        \int64 ->
+            int64
+                |> Gen.Int64.toSignedString
+                |> Gen.String.call_.toInt
+                |> Gen.Maybe.withDefault (Elm.int 0)
+                |> Gen.Json.Encode.call_.int
+    , decoder = Gen.Json.Decode.int |> Gen.Json.Decode.map Gen.Int64.call_.fromInt
+    , toParamString = Gen.Int64.toSignedString
+    , sharedDeclarations = []
+    , requiresPackages = [ "folkertdev/elm-int64" ]
     }
 
 
