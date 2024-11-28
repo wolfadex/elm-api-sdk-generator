@@ -1,0 +1,32 @@
+{
+    "openapi": "3.0.1",
+    "info": {
+        "title": "Ifconfig",
+        "version": "v1"
+    },
+    "servers": [
+        {
+            "description": "Production",
+            "url": "https://ifconfig.ovh"
+        }
+    ],
+    "paths": {
+        "/": {
+            "get": {
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "text/plain": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "ip"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
