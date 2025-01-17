@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -   Support for params being passed in the header
 -   Support for `type : null`
 -   Support for `const : <value>`
+-   Support for `application/x-www-form-urlencoded` bodies
 
 ## [0.7.0] - 2024-09-23
 
