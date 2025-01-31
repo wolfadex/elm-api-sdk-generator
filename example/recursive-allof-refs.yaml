@@ -1,0 +1,43 @@
+openapi: 3.0.1
+info:
+  title: "Recursive allOf refs"
+  version: 1.0.0
+components:
+  schemas:
+    Ancestor:
+      description: "Ancestor. Field: ancestor."
+      type: object
+      properties:
+        ancestor:
+          type: string
+      required:
+        - ancestor
+    Child:
+      description: "Extends Ancestor. Fields: ancestor, child."
+      allOf:
+        - $ref: "#/components/schemas/Ancestor"
+        - type: object
+          properties:
+            child:
+              type: string
+          required:
+            - child
+    GrandChild:
+      description: "Extends Child. Fields: ancestor, child, grandChild"
+      allOf:
+        - $ref: "#/components/schemas/Child"
+        - type: object
+          properties:
+            grandChild:
+              type: string
+          required:
+            - grandChild
+paths:
+  "/api/grand-child":
+    summary: Get a GrandChild object.
+    description:
+    get:
+      operationId: getGrandChild
+      responses:
+        200:
+          $ref: "#/components/schemas/GrandChild"

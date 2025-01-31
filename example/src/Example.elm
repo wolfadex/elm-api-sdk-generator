@@ -1,4 +1,4 @@
-module Example exposing (main)
+module Example exposing (..)
 
 -- import BimcloudApi20232AlphaRelease
 
@@ -11,11 +11,14 @@ import DbFahrplanApi.Api
 import DbFahrplanApi.Types
 import GithubV3RestApi.Api
 import GithubV3RestApi.Types
+import Json.Decode
 import MarioPartyStats.Api
 import MarioPartyStats.Types
 import OpenApi.Common
 import RealworldConduitApi.Api
 import RealworldConduitApi.Types
+import RecursiveAllofRefs.Json
+import RecursiveAllofRefs.Types
 import Trustmark.TradeCheck.Api
 import Trustmark.TradeCheck.Servers
 import Trustmark.TradeCheck.Types
@@ -132,3 +135,47 @@ view _ =
     { title = "Example SDK Usage"
     , body = []
     }
+
+
+
+-- Assert the structure of generated types by declaring instances of them.
+
+
+{-| BasicRouter
+-}
+basicRouterValuePropositionSummary : BasicRouter.Types.ValuePropositionSummary
+basicRouterValuePropositionSummary =
+    { one_sentence_summary = ""
+    , type_ = ""
+    }
+
+
+{-| RecursiveAllofRefs
+-}
+recursiveAllofRefsChild : RecursiveAllofRefs.Types.Child
+recursiveAllofRefsChild =
+    { ancestor = ""
+    , child = ""
+    }
+
+
+recursiveAllofRefsGrandChild : RecursiveAllofRefs.Types.GrandChild
+recursiveAllofRefsGrandChild =
+    { ancestor = ""
+    , child = ""
+    , grandChild = ""
+    }
+
+
+
+-- Assert decoders return correct types with alias functions.
+
+
+decodeRecursiveAllofRefsChild : Json.Decode.Decoder RecursiveAllofRefs.Types.Child
+decodeRecursiveAllofRefsChild =
+    RecursiveAllofRefs.Json.decodeChild
+
+
+decodeRecursiveAllofRefsGrandChild : Json.Decode.Decoder RecursiveAllofRefs.Types.GrandChild
+decodeRecursiveAllofRefsGrandChild =
+    RecursiveAllofRefs.Json.decodeGrandChild
