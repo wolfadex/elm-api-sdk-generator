@@ -11,6 +11,7 @@ set -e
 #
 # (OK, as long as "github-spec" is the last to run before compiling Example,
 # we'll be fine!)
+npm run dev ./example/additional-properties.yaml
 npm run dev ./example/recursive-allof-refs.yaml
 npm run dev ./example/single-enum.yaml
 

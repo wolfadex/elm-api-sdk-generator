@@ -1,0 +1,51 @@
+openapi: 3.0.1
+info:
+  title: "Additional Properties"
+  version: "1"
+components:
+  schemas:
+    Popularity:
+      type: object
+      properties:
+        tags:
+          type: object
+          properties:
+            declaredProperty:
+              type: string
+          required:
+            - declaredProperty
+          additionalProperties:
+            type: object
+            properties:
+              name:
+                type: string
+              isPopular:
+                type: boolean
+            required:
+              - name
+      required:
+        - tags
+    StringLists:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string
+
+paths:
+  "/api/popularity":
+    summary: Get Popularity
+    description:
+    get:
+      operationId: getPopularity
+      responses:
+        200:
+          $ref: "#/components/schemas/Popularity"
+  "/api/list":
+    summary: Get StringLists
+    description:
+    get:
+      operationId: getStringLists
+      responses:
+        200:
+          $ref: "#/components/schemas/StringLists"

@@ -318,6 +318,7 @@ type Type
         }
     | Null
     | List Type
+    | Dict Type
     | OneOf TypeName OneOfData
     | Enum (List UnsafeName)
     | Value

@@ -468,8 +468,10 @@ oneOfType types =
             )
 
 
-objectSchemaToType : Bool -> Json.Schema.Definitions.SubSchema -> CliMonad { type_ : Common.Type, documentation : Maybe String }
-objectSchemaToType qualify subSchema =
+{-| Transform an object schema's named and inherited (via $ref) properties to a type
+-}
+objectSchemaToTypeHelp : Bool -> Json.Schema.Definitions.SubSchema -> CliMonad { type_ : Common.Type, documentation : Maybe String }
+objectSchemaToTypeHelp qualify subSchema =
     CliMonad.map2
         (\schemaProps allOfProps ->
             let
@@ -507,6 +509,72 @@ objectSchemaToType qualify subSchema =
         )
         (subSchemaToProperties qualify subSchema)
         (subSchemaAllOfToProperties qualify subSchema)
+
+
+objectSchemaToType : Bool -> Json.Schema.Definitions.SubSchema -> CliMonad { type_ : Common.Type, documentation : Maybe String }
+objectSchemaToType qualify subSchema =
+    let
+        declaredProperties : CliMonad { type_ : Common.Type, documentation : Maybe String }
+        declaredProperties =
+            objectSchemaToTypeHelp qualify subSchema
+    in
+    case subSchema.additionalProperties of
+        -- Object contains only specified properties, not arbitrary extra ones.
+        Just (Json.Schema.Definitions.BooleanSchema False) ->
+            declaredProperties
+
+        -- It's unclear whether "true" is an acceptable value for
+        -- additionalProperties. If so, it would likely mean that the type(s)
+        -- of additional properties are completely arbitrary.
+        Just (Json.Schema.Definitions.BooleanSchema True) ->
+            declaredProperties
+                |> CliMonad.andThen
+                    (\namedProperties ->
+                        CliMonad.todoWithDefault namedProperties
+                            "Ignoring `additionalProperties: true`"
+                    )
+
+        -- The object contains an additionalProperties entry that describes the
+        -- type of the values, which may have arbitrary keys, in the object.
+        Just recordEntrySubSchema ->
+            CliMonad.map2
+                (\declaredProperties_ dictValueType ->
+                    case declaredProperties_.type_ of
+                        -- No specifically declared properties are in the
+                        -- object, so the whole thing is a Dict.
+                        Common.Object [] ->
+                            { type_ = Common.Dict dictValueType.type_
+                            , documentation = dictValueType.documentation
+                            }
+
+                        -- There are declared properties, so put the extra
+                        -- properties into their own field in the record.
+                        Common.Object properties ->
+                            let
+                                additionalPropertiesField : ( Common.UnsafeName, Common.Field )
+                                additionalPropertiesField =
+                                    ( Common.UnsafeName "additionalProperties"
+                                    , { type_ = Common.Dict dictValueType.type_
+                                      , required = False
+                                      , documentation = dictValueType.documentation
+                                      }
+                                    )
+                            in
+                            { type_ =
+                                additionalPropertiesField
+                                    :: properties
+                                    |> Common.Object
+                            , documentation = Nothing
+                            }
+
+                        _ ->
+                            { type_ = Common.Value, documentation = Just "Don't know how to do this" }
+                )
+                declaredProperties
+                (schemaToType qualify recordEntrySubSchema)
+
+        Nothing ->
+            declaredProperties
 
 
 joinIfNotEmpty : String -> List (Maybe String) -> Maybe String
@@ -609,6 +677,9 @@ typeToAnnotationWithNullable qualify type_ =
         Common.List t ->
             CliMonad.map Elm.Annotation.list (typeToAnnotationWithNullable qualify t)
 
+        Common.Dict t ->
+            CliMonad.map (Elm.Annotation.dict Elm.Annotation.string) (typeToAnnotationWithNullable qualify t)
+
         Common.Enum variants ->
             CliMonad.enumName variants
                 |> CliMonad.andThen
@@ -674,6 +745,9 @@ typeToAnnotationWithMaybe qualify type_ =
 
         Common.List t ->
             CliMonad.map Elm.Annotation.list (typeToAnnotationWithMaybe qualify t)
+
+        Common.Dict t ->
+            CliMonad.map (Elm.Annotation.dict Elm.Annotation.string) (typeToAnnotationWithMaybe qualify t)
 
         Common.Enum variants ->
             CliMonad.enumName variants
@@ -863,6 +937,13 @@ typeToEncoder qualify type_ =
                         Gen.Json.Encode.call_.list (Elm.functionReduced "rec" encoder)
                     )
 
+        Common.Dict t ->
+            typeToEncoder qualify t
+                |> CliMonad.map
+                    (\encoder ->
+                        Gen.Json.Encode.call_.dict Gen.Basics.values_.identity (Elm.functionReduced "rec" encoder)
+                    )
+
         Common.Nullable t ->
             CliMonad.map
                 (\encoder nullableValue ->
@@ -1035,6 +1116,10 @@ typeToDecoder qualify type_ =
 
         Common.List t ->
             CliMonad.map Gen.Json.Decode.list
+                (typeToDecoder qualify t)
+
+        Common.Dict t ->
+            CliMonad.map Gen.Json.Decode.dict
                 (typeToDecoder qualify t)
 
         Common.Enum variants ->
