@@ -517,26 +517,9 @@ objectSchemaToType qualify subSchema =
         declaredProperties : CliMonad { type_ : Common.Type, documentation : Maybe String }
         declaredProperties =
             objectSchemaToTypeHelp qualify subSchema
-    in
-    case subSchema.additionalProperties of
-        -- Object contains only specified properties, not arbitrary extra ones.
-        Just (Json.Schema.Definitions.BooleanSchema False) ->
-            declaredProperties
 
-        -- It's unclear whether "true" is an acceptable value for
-        -- additionalProperties. If so, it would likely mean that the type(s)
-        -- of additional properties are completely arbitrary.
-        Just (Json.Schema.Definitions.BooleanSchema True) ->
-            declaredProperties
-                |> CliMonad.andThen
-                    (\namedProperties ->
-                        CliMonad.todoWithDefault namedProperties
-                            "Ignoring `additionalProperties: true`"
-                    )
-
-        -- The object contains an additionalProperties entry that describes the
-        -- type of the values, which may have arbitrary keys, in the object.
-        Just recordEntrySubSchema ->
+        declaredAndAdditionalProperties : CliMonad { type_ : Common.Type, documentation : Maybe String } -> CliMonad { type_ : Common.Type, documentation : Maybe String }
+        declaredAndAdditionalProperties additionalSchema =
             CliMonad.map2
                 (\declaredProperties_ dictValueType ->
                     case declaredProperties_.type_ of
@@ -571,7 +554,23 @@ objectSchemaToType qualify subSchema =
                             { type_ = Common.Value, documentation = Just "Don't know how to do this" }
                 )
                 declaredProperties
-                (schemaToType qualify recordEntrySubSchema)
+                additionalSchema
+    in
+    case subSchema.additionalProperties of
+        -- Object contains only specified properties, not arbitrary extra ones.
+        Just (Json.Schema.Definitions.BooleanSchema False) ->
+            declaredProperties
+
+        -- It's unclear whether "true" is *technically* an acceptable value for
+        -- additionalProperties, but the GitHub API spec uses it.
+        Just (Json.Schema.Definitions.BooleanSchema True) ->
+            CliMonad.succeed { type_ = Common.Value, documentation = Nothing }
+                |> declaredAndAdditionalProperties
+
+        -- The object contains an additionalProperties entry that describes the
+        -- type of the values, which may have arbitrary keys, in the object.
+        Just additionalPropertiesSchema ->
+            declaredAndAdditionalProperties (schemaToType qualify additionalPropertiesSchema)
 
         Nothing ->
             declaredProperties

@@ -31,6 +31,12 @@ components:
         type: array
         items:
           type: string
+    VagueExtras:
+      type: object
+      properties:
+        declaredProperty:
+          type: string
+      additionalProperties: true
 
 paths:
   "/api/popularity":
