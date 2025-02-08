@@ -10,10 +10,10 @@ import FastDict
 import FastSet
 import Fuzz
 import Json.Decode
+import List.Extra
 import OpenApi
 import OpenApi.Config
 import OpenApi.Generate
-import Result.Extra
 import String.Extra
 import Test exposing (Test)
 import Utils
@@ -45,15 +45,39 @@ composeExpectations expectations =
         ()
 
 
+getIndentation : String -> Int
+getIndentation text =
+    text
+        |> String.lines
+        |> List.Extra.dropWhile String.isEmpty
+        |> List.head
+        |> Maybe.map (\firstLine -> String.length firstLine - String.length (String.trimLeft firstLine))
+        |> Maybe.withDefault 0
+
+
 {-| Remove all indentation and newlines from a stringified Elm declaration
 -}
-toOneLine : String -> String
-toOneLine declaration =
+unindent : String -> String
+unindent declaration =
+    let
+        indentation : Int
+        indentation =
+            getIndentation declaration
+    in
     declaration
-        |> String.split "\n"
-        |> List.map String.trim
-        |> String.join " "
+        |> String.lines
+        |> List.Extra.dropWhile String.isEmpty
+        |> List.map (\line -> String.dropLeft indentation line)
+        |> String.join "\n"
         |> String.trim
+
+
+getDeclaration : String -> GeneratedModule -> Maybe { imports : String, docs : String, signature : String, body : String }
+getDeclaration name module_ =
+    module_.declarations
+        |> FastDict.get name
+        |> Maybe.map (.declaration >> Elm.ToString.declaration)
+        |> Maybe.andThen List.head
 
 
 {-| Expect the `type_` from `module_` to be stringified as `expectedBody`
@@ -62,16 +86,13 @@ expectedBody may have mutiple lines, with arbitrary indentation (leading and
 trailing spaces and newlines will not be considered in the comparison).
 
 -}
-expectType : GeneratedModule -> String -> String -> Expect.Expectation
-expectType module_ type_ expectedBody =
-    module_.declarations
-        |> FastDict.get type_
-        |> Maybe.map (.declaration >> Elm.ToString.declaration)
-        |> Maybe.andThen List.head
+expectDeclarationBody : String -> GeneratedModule -> String -> Expect.Expectation
+expectDeclarationBody type_ module_ expectedBody =
+    getDeclaration type_ module_
         |> Maybe.map .body
         |> Maybe.map
             (\actualBody ->
-                Expect.equal (toOneLine actualBody) (toOneLine expectedBody)
+                Expect.equal actualBody (unindent expectedBody)
             )
         |> Maybe.withDefault
             (Expect.fail
@@ -226,32 +247,69 @@ suite =
 
                     Ok ( files, _ ) ->
                         case files of
-                            [ apiFile, jsonFile, typesFile, helperFile ] ->
+                            [ jsonFile, typesFile, helperFile ] ->
                                 composeExpectations
-                                    [ expectModuleName apiFile (namespace ++ [ "Api" ])
-                                    , expectModuleName typesFile (namespace ++ [ "Types" ])
+                                    [ expectModuleName typesFile (namespace ++ [ "Types" ])
                                     , expectModuleName jsonFile (namespace ++ [ "Json" ])
                                     , expectModuleName helperFile [ "OpenApi", "Common" ]
-                                    , expectType typesFile
-                                        "Popularity"
+                                    , expectDeclarationBody "Popularity"
+                                        typesFile
                                         """
                                             type alias Popularity =
                                                 { tags :
-                                                    { additionalProperties : Maybe (Dict.Dict String { isPopular : Maybe Bool, name : String })
+                                                    { additionalProperties :
+                                                        Dict.Dict String { isPopular : Maybe Bool, name : String }
                                                     , declaredProperty : String
                                                     }
                                                 }
                                         """
-                                    , expectType typesFile
-                                        "StringLists"
-                                        "type alias StringLists = Dict.Dict String (List String)"
-                                    , expectType typesFile
-                                        "VagueExtras"
+                                    , expectDeclarationBody "StringLists"
+                                        typesFile
+                                        """
+                                            type alias StringLists =
+                                                Dict.Dict String (List String)
+                                        """
+                                    , expectDeclarationBody "OnlyExtras"
+                                        typesFile
+                                        """
+                                            type alias OnlyExtras =
+                                                Dict.Dict String String
+                                        """
+                                    , expectDeclarationBody "decodeOnlyExtras"
+                                        jsonFile
+                                        """
+                                            decodeOnlyExtras : Json.Decode.Decoder AdditionalProperties.Types.OnlyExtras
+                                            decodeOnlyExtras =
+                                                Json.Decode.dict Json.Decode.string
+                                        """
+                                    , expectDeclarationBody "encodeOnlyExtras"
+                                        jsonFile
+                                        """
+                                            encodeOnlyExtras : AdditionalProperties.Types.OnlyExtras -> Json.Encode.Value
+                                            encodeOnlyExtras =
+                                                Json.Encode.dict Basics.identity Json.Encode.string
+                                        """
+                                    , expectDeclarationBody "VagueExtras"
+                                        typesFile
                                         """
                                             type alias VagueExtras =
-                                                { additionalProperties : Maybe (Dict.Dict String Json.Encode.Value)
+                                                { additionalProperties : Dict.Dict String Json.Encode.Value
                                                 , declaredProperty : Maybe String
                                                 }
+                                        """
+                                    , expectDeclarationBody "decodeVagueExtras"
+                                        jsonFile
+                                        """
+                                            decodeVagueExtras : Json.Decode.Decoder AdditionalProperties.Types.VagueExtras
+                                            decodeVagueExtras =
+                                                XXX
+                                        """
+                                    , expectDeclarationBody "decodeVagueExtras"
+                                        jsonFile
+                                        """
+                                            decodeVagueExtras : Json.Decode.Decoder AdditionalProperties.Types.VagueExtras
+                                            decodeVagueExtras =
+                                                XXX
                                         """
                                     ]
 
@@ -260,7 +318,7 @@ suite =
 
                             _ ->
                                 Expect.fail
-                                    ("Expected to generate 4 files but found "
+                                    ("Expected to generate 3 files but found "
                                         ++ (List.length files |> String.fromInt)
                                         ++ ": "
                                         ++ moduleNames files
@@ -459,49 +517,29 @@ additionalPropertiesOasString =
         "type": "object"
       },
       "StringLists": {
+        "type": "object",
         "additionalProperties": {
+          "type": "array",
           "items": {
             "type": "string"
-          },
-          "type": "array"
-        },
-        "type": "object"
+          }
+        }
+      },
+      "OnlyExtras": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
       },
       "VagueExtras": {
+        "type": "object",
         "additionalProperties": true,
         "properties": {
           "declaredProperty": {
             "type": "string"
           }
-        },
-        "type": "object"
+        }
       }
-    }
-  },
-  "paths": {
-    "/api/list": {
-      "description": null,
-      "get": {
-        "operationId": "getStringLists",
-        "responses": {
-          "200": {
-            "$ref": "#/components/schemas/StringLists"
-          }
-        }
-      },
-      "summary": "Get StringLists"
-    },
-    "/api/popularity": {
-      "description": null,
-      "get": {
-        "operationId": "getPopularity",
-        "responses": {
-          "200": {
-            "$ref": "#/components/schemas/Popularity"
-          }
-        }
-      },
-      "summary": "Get Popularity"
     }
   }
 }"""

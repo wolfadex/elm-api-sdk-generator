@@ -318,7 +318,8 @@ type Type
         }
     | Null
     | List Type
-    | Dict Type
+      -- The type declared in additionalProperties, and a list of normal properties
+    | Dict Type Object
     | OneOf TypeName OneOfData
     | Enum (List UnsafeName)
     | Value
