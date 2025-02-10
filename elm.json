@@ -67,8 +67,11 @@
     },
     "test-dependencies": {
         "direct": {
+            "elm/parser": "1.1.0",
             "elm-explorations/test": "2.2.0",
-            "miniBill/elm-unicode": "1.1.1"
+            "lue-bird/elm-syntax-format": "1.1.7",
+            "miniBill/elm-unicode": "1.1.1",
+            "stil4m/elm-syntax": "7.3.8"
         },
         "indirect": {}
     }

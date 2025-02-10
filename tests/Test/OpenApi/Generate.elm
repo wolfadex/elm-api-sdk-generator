@@ -4,7 +4,10 @@ import Char
 import CliMonad
 import Dict
 import Elm
+import Elm.Parser
+import Elm.Syntax.Node
 import Elm.ToString
+import ElmSyntaxPrint
 import Expect
 import FastDict
 import FastSet
@@ -14,6 +17,7 @@ import List.Extra
 import OpenApi
 import OpenApi.Config
 import OpenApi.Generate
+import Parser
 import String.Extra
 import Test exposing (Test)
 import Utils
@@ -78,6 +82,37 @@ getDeclaration name module_ =
         |> FastDict.get name
         |> Maybe.map (.declaration >> Elm.ToString.declaration)
         |> Maybe.andThen List.head
+        -- Elm.ToString generates extremely over-indented code, so use the
+        -- elm-syntax-format package to re-indent the code for human
+        -- readability in "snapshot"-style tests.
+        |> Maybe.map
+            (\declaration ->
+                let
+                    srcFile : String
+                    srcFile =
+                        "module Foo exposing (..)\n\n\n" ++ declaration.body
+                in
+                case Elm.Parser.parseToFile srcFile of
+                    Err errors ->
+                        { declaration | body = Parser.deadEndsToString errors }
+
+                    Ok file ->
+                        List.head file.declarations
+                            |> Maybe.map
+                                (\decl ->
+                                    { declaration
+                                        | body =
+                                            ElmSyntaxPrint.declaration
+                                                { portDocumentationComment = Nothing, comments = [] }
+                                                (Elm.Syntax.Node.value decl)
+                                                { indent = 0 }
+                                    }
+                                )
+                            |> Maybe.withDefault
+                                { declaration
+                                    | body = "Bad parse result in test for " ++ name ++ ": no declarations"
+                                }
+            )
 
 
 {-| Expect the `type_` from `module_` to be stringified as `expectedBody`
@@ -92,11 +127,7 @@ expectDeclarationBody type_ module_ expectedBody =
         |> Maybe.map .body
         |> Maybe.map
             (\actualBody ->
-                let
-                    _ =
-                        Debug.log actualBody "<- actualBody\n"
-                in
-                Expect.equal (String.trim actualBody) (unindent expectedBody)
+                Expect.equal actualBody (unindent expectedBody)
             )
         |> Maybe.withDefault
             (Expect.fail
@@ -256,66 +287,180 @@ suite =
                                     [ expectModuleName typesFile (namespace ++ [ "Types" ])
                                     , expectModuleName jsonFile (namespace ++ [ "Json" ])
                                     , expectModuleName helperFile [ "OpenApi", "Common" ]
-                                    , expectDeclarationBody "Popularity"
-                                        typesFile
-                                        """
-                                            type alias Popularity =
-                                                { tags :
-                                                    { additionalProperties :
-                                                        Dict.Dict String { isPopular : Maybe Bool, name : String }
-                                                    , declaredProperty : String
-                                                    }
-                                                }
-                                        """
                                     , expectDeclarationBody "StringLists"
                                         typesFile
                                         """
-                                            type alias StringLists =
-                                                Dict.Dict String (List String)
+                                        type alias StringLists =
+                                            Dict.Dict String (List String)
                                         """
                                     , expectDeclarationBody "OnlyExtras"
                                         typesFile
                                         """
-                                            type alias OnlyExtras =
-                                                Dict.Dict String String
+                                        type alias OnlyExtras =
+                                            Dict.Dict String String
                                         """
                                     , expectDeclarationBody "decodeOnlyExtras"
                                         jsonFile
                                         """
-                                            decodeOnlyExtras : Json.Decode.Decoder AdditionalProperties.Types.OnlyExtras
-                                            decodeOnlyExtras =
-                                                Json.Decode.dict Json.Decode.string
+                                        decodeOnlyExtras : Json.Decode.Decoder AdditionalProperties.Types.OnlyExtras
+                                        decodeOnlyExtras =
+                                            Json.Decode.dict Json.Decode.string
                                         """
                                     , expectDeclarationBody "encodeOnlyExtras"
                                         jsonFile
                                         """
-                                            encodeOnlyExtras : AdditionalProperties.Types.OnlyExtras -> Json.Encode.Value
-                                            encodeOnlyExtras =
-                                                Json.Encode.dict Basics.identity Json.Encode.string
+                                        encodeOnlyExtras : AdditionalProperties.Types.OnlyExtras -> Json.Encode.Value
+                                        encodeOnlyExtras =
+                                            Json.Encode.dict Basics.identity Json.Encode.string
                                         """
                                     , expectDeclarationBody "VagueExtras"
                                         typesFile
                                         """
-                                            type alias VagueExtras =
-                                                { additionalProperties : Dict.Dict String Json.Encode.Value
-                                                , declaredProperty : Maybe String
-                                                }
+                                        type alias VagueExtras =
+                                            { additionalProperties : Dict.Dict String Json.Encode.Value
+                                            , declaredProperty : Maybe String
+                                            }
                                         """
-                                    , expectDeclarationBody "decodeVagueExtras"
+                                    , expectDeclarationBody "Popularity"
+                                        typesFile
+                                        """
+                                        type alias Popularity =
+                                            { tags :
+                                                { additionalProperties :
+                                                    Dict.Dict String { isPopular : Maybe Bool, name : String }
+                                                , declaredProperty : String
+                                                }
+                                            }
+                                        """
+                                    , expectDeclarationBody "decodePopularity"
                                         jsonFile
                                         """
-                                            decodeVagueExtras : Json.Decode.Decoder AdditionalProperties.Types.VagueExtras
-                                            decodeVagueExtras =
-                                                Json.Decode.succeed
-                                                    (\\declaredProperty additionalProperties ->
-                                                        { declaredProperty = declaredProperty
-                                                        , additionalProperties = additionalProperties
-                                                        }
-                                                    ) |> OpenApi.Common.jsonDecodeAndMap
-                                                        (OpenApi.Common.decodeOptionalField
-                                                                "declaredProperty"
-                                                                Json.Decode.string
-                                                        )
+decodePopularity : Json.Decode.Decoder AdditionalProperties.Types.Popularity
+decodePopularity =
+    Json.Decode.succeed
+        (\\tags -> { tags = tags })
+        |> OpenApi.Common.jsonDecodeAndMap
+            (Json.Decode.field
+                "tags"
+                (Json.Decode.succeed
+                    (\\declaredProperty additionalProperties ->
+                        { declaredProperty =
+                            declaredProperty
+                        , additionalProperties =
+                            additionalProperties
+                        }
+                    )
+                    |> OpenApi.Common.jsonDecodeAndMap
+                        (Json.Decode.field
+                            "declaredProperty"
+                            Json.Decode.string
+                        )
+                    |> (OpenApi.Common.jsonDecodeAndMap
+                            (Json.Decode.keyValuePairs
+                                Json.Decode.value
+                            )
+                            |> Json.Decode.andThen
+                                (\\keyValuePairs ->
+                                    keyValuePairs
+                                        |> List.filterMap
+                                            (\\( key, jsonValue ) ->
+                                                if
+                                                    List.member
+                                                        key
+                                                        [ "declaredProperty"
+                                                        ]
+                                                then
+                                                    Nothing
+
+                                                else
+                                                    let
+                                                        additionalPropertyDecoder =
+                                                            Json.Decode.succeed
+                                                                (\\isPopular name ->
+                                                                    { isPopular =
+                                                                        isPopular
+                                                                    , name =
+                                                                        name
+                                                                    }
+                                                                )
+                                                                |> OpenApi.Common.jsonDecodeAndMap
+                                                                    (OpenApi.Common.decodeOptionalField
+                                                                        "isPopular"
+                                                                        Json.Decode.bool
+                                                                    )
+                                                                |> OpenApi.Common.jsonDecodeAndMap
+                                                                    (Json.Decode.field
+                                                                        "name"
+                                                                        Json.Decode.string
+                                                                    )
+                                                    in
+                                                    case
+                                                        Json.Decode.decodeValue
+                                                            additionalPropertyDecoder
+                                                            jsonValue
+                                                    of
+                                                        Ok decodedValue ->
+                                                            Just
+                                                                (Result.Ok
+                                                                    ( key
+                                                                    , decodedValue
+                                                                    )
+                                                                )
+
+                                                        Err decodeError ->
+                                                            Just
+                                                                (Result.Err
+                                                                    ("Field '"
+                                                                        ++ key
+                                                                        ++ "': "
+                                                                        ++ Json.Decode.errorToString
+                                                                            decodeError
+                                                                    )
+                                                                )
+                                            )
+                                        |> (\\resultPairs ->
+                                                let
+                                                    fieldErrors =
+                                                        List.filterMap
+                                                            (\\field ->
+                                                                case field of
+                                                                    Ok _ ->
+                                                                        Nothing
+
+                                                                    Err error ->
+                                                                        Just
+                                                                            error
+                                                            )
+                                                            resultPairs
+                                                in
+                                                if
+                                                    List.isEmpty
+                                                        fieldErrors
+                                                then
+                                                    resultPairs
+                                                        |> List.filterMap
+                                                            Result.toMaybe
+                                                        |> Dict.fromList
+                                                        |> Json.Decode.succeed
+
+                                                else
+                                                    [ \"\"\"Encountered errors while decoding additionalProperties:
+- \"\"\"
+                                                    , String.join
+                                                        \"\"\"
+
+- \"\"\"
+                                                        fieldErrors
+                                                    , \"\"\"
+\"\"\"
+                                                    ]
+                                                        |> String.concat
+                                                        |> Json.Decode.fail
+                                           )
+                                )
+                       )
+                )
+            )
                                         """
                                     ]
 
