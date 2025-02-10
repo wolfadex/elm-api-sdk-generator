@@ -92,7 +92,11 @@ expectDeclarationBody type_ module_ expectedBody =
         |> Maybe.map .body
         |> Maybe.map
             (\actualBody ->
-                Expect.equal actualBody (unindent expectedBody)
+                let
+                    _ =
+                        Debug.log actualBody "<- actualBody\n"
+                in
+                Expect.equal (String.trim actualBody) (unindent expectedBody)
             )
         |> Maybe.withDefault
             (Expect.fail
@@ -302,14 +306,16 @@ suite =
                                         """
                                             decodeVagueExtras : Json.Decode.Decoder AdditionalProperties.Types.VagueExtras
                                             decodeVagueExtras =
-                                                XXX
-                                        """
-                                    , expectDeclarationBody "decodeVagueExtras"
-                                        jsonFile
-                                        """
-                                            decodeVagueExtras : Json.Decode.Decoder AdditionalProperties.Types.VagueExtras
-                                            decodeVagueExtras =
-                                                XXX
+                                                Json.Decode.succeed
+                                                    (\\declaredProperty additionalProperties ->
+                                                        { declaredProperty = declaredProperty
+                                                        , additionalProperties = additionalProperties
+                                                        }
+                                                    ) |> OpenApi.Common.jsonDecodeAndMap
+                                                        (OpenApi.Common.decodeOptionalField
+                                                                "declaredProperty"
+                                                                Json.Decode.string
+                                                        )
                                         """
                                     ]
 
