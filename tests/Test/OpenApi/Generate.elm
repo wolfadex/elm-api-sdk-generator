@@ -136,10 +136,7 @@ expectDeclarationBody type_ module_ expectedBody =
             )
 
 
-{-|
-
-    Wraps Test.test to make it easy to test files produced by a given OAS.
-
+{-| Wraps Test.test to make it easy to test files produced by a given OAS.
 -}
 testOas : String -> String -> ({ helperFile : GeneratedModule, jsonFile : GeneratedModule, typesFile : GeneratedModule } -> Expect.Expectation) -> Test.Test
 testOas name oasSpec test =
@@ -477,69 +474,68 @@ decodePopularity =
                             "declaredProperty"
                             Json.Decode.string
                         )
-                    |> (OpenApi.Common.jsonDecodeAndMap
-                            (Json.Decode.keyValuePairs
-                                Json.Decode.value
-                            )
+                    |> OpenApi.Common.jsonDecodeAndMap
+                        (Json.Decode.keyValuePairs
+                            Json.Decode.value
                             |> Json.Decode.andThen
                                 (\\keyValuePairs ->
-                                    keyValuePairs
-                                        |> List.filterMap
-                                            (\\( key, jsonValue ) ->
-                                                if
-                                                    List.member
-                                                        key
-                                                        [ "declaredProperty"
-                                                        ]
-                                                then
-                                                    Nothing
+                                    List.filterMap
+                                        (\\( key, jsonValue ) ->
+                                            if
+                                                List.member
+                                                    key
+                                                    [ "declaredProperty"
+                                                    ]
+                                            then
+                                                Nothing
 
-                                                else
-                                                    let
-                                                        additionalPropertyDecoder =
-                                                            Json.Decode.succeed
-                                                                (\\isPopular name ->
-                                                                    { isPopular =
-                                                                        isPopular
-                                                                    , name =
-                                                                        name
-                                                                    }
+                                            else
+                                                let
+                                                    additionalPropertyDecoder =
+                                                        Json.Decode.succeed
+                                                            (\\isPopular name ->
+                                                                { isPopular =
+                                                                    isPopular
+                                                                , name =
+                                                                    name
+                                                                }
+                                                            )
+                                                            |> OpenApi.Common.jsonDecodeAndMap
+                                                                (OpenApi.Common.decodeOptionalField
+                                                                    "isPopular"
+                                                                    Json.Decode.bool
                                                                 )
-                                                                |> OpenApi.Common.jsonDecodeAndMap
-                                                                    (OpenApi.Common.decodeOptionalField
-                                                                        "isPopular"
-                                                                        Json.Decode.bool
-                                                                    )
-                                                                |> OpenApi.Common.jsonDecodeAndMap
-                                                                    (Json.Decode.field
-                                                                        "name"
-                                                                        Json.Decode.string
-                                                                    )
-                                                    in
-                                                    case
-                                                        Json.Decode.decodeValue
-                                                            additionalPropertyDecoder
-                                                            jsonValue
-                                                    of
-                                                        Ok decodedValue ->
-                                                            Just
-                                                                (Result.Ok
-                                                                    ( key
-                                                                    , decodedValue
-                                                                    )
+                                                            |> OpenApi.Common.jsonDecodeAndMap
+                                                                (Json.Decode.field
+                                                                    "name"
+                                                                    Json.Decode.string
                                                                 )
+                                                in
+                                                case
+                                                    Json.Decode.decodeValue
+                                                        additionalPropertyDecoder
+                                                        jsonValue
+                                                of
+                                                    Ok decodedValue ->
+                                                        Just
+                                                            (Result.Ok
+                                                                ( key
+                                                                , decodedValue
+                                                                )
+                                                            )
 
-                                                        Err decodeError ->
-                                                            Just
-                                                                (Result.Err
-                                                                    ("Field '"
-                                                                        ++ key
-                                                                        ++ "': "
-                                                                        ++ Json.Decode.errorToString
-                                                                            decodeError
-                                                                    )
+                                                    Err decodeError ->
+                                                        Just
+                                                            (Result.Err
+                                                                ("Field '"
+                                                                    ++ key
+                                                                    ++ "': "
+                                                                    ++ Json.Decode.errorToString
+                                                                        decodeError
                                                                 )
-                                            )
+                                                            )
+                                        )
+                                        keyValuePairs
                                         |> (\\resultPairs ->
                                                 let
                                                     fieldErrors =
@@ -580,7 +576,7 @@ decodePopularity =
                                                         |> Json.Decode.fail
                                            )
                                 )
-                       )
+                        )
                 )
             )
                                 """
