@@ -2,9 +2,6 @@ module Example exposing (..)
 
 -- import BimcloudApi20232AlphaRelease
 
-import AdditionalProperties.Api
-import AdditionalProperties.Json
-import AdditionalProperties.Types
 import AirlineCodeLookupApi.Api
 import AirlineCodeLookupApi.Types
 import BasicRouter.Json
@@ -145,18 +142,6 @@ view _ =
 -- Assert the structure of generated types by declaring instances of them.
 
 
-{-| AdditionalProperties
--}
-additionalPropertiesPopularity : AdditionalProperties.Types.Popularity
-additionalPropertiesPopularity =
-    { tags = Dict.singleton "elm-open-api" { isPopular = Just True, name = "elm-open-api" } }
-
-
-additionalPropertiesStringList : AdditionalProperties.Types.StringLists
-additionalPropertiesStringList =
-    Dict.singleton "key" [ "" ]
-
-
 {-| BasicRouter
 -}
 basicRouterValuePropositionSummary : BasicRouter.Types.ValuePropositionSummary
@@ -185,28 +170,6 @@ recursiveAllofRefsGrandChild =
 
 
 -- Assert decoders and encoders return correct types with alias functions.
-
-
-{-| AdditionalProperties
--}
-decodeAdditionalPropertiesPopularity : Json.Decode.Decoder AdditionalProperties.Types.Popularity
-decodeAdditionalPropertiesPopularity =
-    AdditionalProperties.Json.decodePopularity
-
-
-encodeAdditionalPropertiesPopularity : Json.Encode.Encoder AdditionalProperties.Types.Popularity
-encodeAdditionalPropertiesPopularity =
-    AdditionalProperties.Json.encodePopularity
-
-
-decodeAdditionalPropertiesStringList : Json.Decode.Decoder AdditionalProperties.Types.StringList
-decodeAdditionalPropertiesStringList =
-    AdditionalProperties.Json.decodeStringList
-
-
-encodeAdditionalPropertiesStringList : Json.Encode.Encoder AdditionalProperties.Types.StringList
-encodeAdditionalPropertiesStringList =
-    AdditionalProperties.Json.encodeStringList
 
 
 {-| RecursiveAllofRefs
