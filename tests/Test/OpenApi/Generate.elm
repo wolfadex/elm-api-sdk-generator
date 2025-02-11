@@ -13,6 +13,7 @@ import FastDict
 import FastSet
 import Fuzz
 import Json.Decode
+import Json.Encode
 import List.Extra
 import OpenApi
 import OpenApi.Config
@@ -462,6 +463,46 @@ decodePopularity =
                 )
             )
                                         """
+                                    , expectDeclarationBody "encodePopularity"
+                                        jsonFile
+                                        """
+encodePopularity : AdditionalProperties.Types.Popularity -> Json.Encode.Value
+encodePopularity rec =
+    Json.Encode.object
+        [ ( "tags"
+          , Json.Encode.object
+                (List.append
+                    [ ( "declaredProperty"
+                      , Json.Encode.string rec.tags.declaredProperty
+                      )
+                    ]
+                    (List.map
+                        (\\( key, value ) ->
+                            ( key
+                            , Json.Encode.object
+                                (List.filterMap
+                                    Basics.identity
+                                    [ Maybe.map
+                                        (\\mapUnpack ->
+                                            ( "isPopular"
+                                            , Json.Encode.bool mapUnpack
+                                            )
+                                        )
+                                        value.isPopular
+                                    , Just
+                                        ( "name"
+                                        , Json.Encode.string value.name
+                                        )
+                                    ]
+                                )
+                            )
+                        )
+                        (Dict.toList rec.tags.additionalProperties)
+                    )
+                )
+          )
+        ]
+                                        """
                                     ]
 
                             [] ->
@@ -474,6 +515,72 @@ decodePopularity =
                                         ++ ": "
                                         ++ moduleNames files
                                     )
+        , Test.test "[TEMPORARY] Encoder" <|
+            \() ->
+                let
+                    encodePopularity : { tags : { additionalProperties : Dict.Dict String { isPopular : Maybe Bool, name : String }, declaredProperty : String } } -> Json.Encode.Value
+                    encodePopularity rec =
+                        Json.Encode.object
+                            [ ( "tags"
+                              , Json.Encode.object
+                                    (List.append
+                                        [ ( "declaredProperty"
+                                          , Json.Encode.string rec.tags.declaredProperty
+                                          )
+                                        ]
+                                        (List.map
+                                            (\( key, value ) ->
+                                                ( key
+                                                , Json.Encode.object
+                                                    (List.filterMap
+                                                        Basics.identity
+                                                        [ Maybe.map
+                                                            (\mapUnpack ->
+                                                                ( "isPopular"
+                                                                , Json.Encode.bool mapUnpack
+                                                                )
+                                                            )
+                                                            value.isPopular
+                                                        , Just
+                                                            ( "name"
+                                                            , Json.Encode.string value.name
+                                                            )
+                                                        ]
+                                                    )
+                                                )
+                                            )
+                                            (Dict.toList rec.tags.additionalProperties)
+                                        )
+                                    )
+                              )
+                            ]
+
+                    testData : { tags : { additionalProperties : Dict.Dict String { isPopular : Maybe Bool, name : String }, declaredProperty : String } }
+                    testData =
+                        { tags =
+                            { additionalProperties =
+                                Dict.fromList
+                                    [ ( "bar", { isPopular = Nothing, name = "bar" } )
+                                    , ( "foo", { isPopular = Just True, name = "foo" } )
+                                    ]
+                            , declaredProperty = "declared"
+                            }
+                        }
+                in
+                Expect.equal (Json.Encode.encode 4 (encodePopularity testData))
+                    (unindent """
+                    {
+                        "tags": {
+                            "declaredProperty": "declared",
+                            "bar": {
+                                "name": "bar"
+                            },
+                            "foo": {
+                                "isPopular": true,
+                                "name": "foo"
+                            }
+                        }
+                    }""")
         , Test.test "Decoder" <|
             \() ->
                 let

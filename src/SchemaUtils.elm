@@ -951,35 +951,69 @@ typeToEncoder qualify type_ =
 
         -- An object with additionalProperties (the type of those properties is
         -- `dictValueType`) and no normal `properties` fields: A simple Dict.
-        Common.Dict dictValueType [] ->
-            typeToEncoder qualify dictValueType
+        Common.Dict additionalPropertiesType [] ->
+            typeToEncoder qualify additionalPropertiesType
                 |> CliMonad.map
                     (\encoder ->
                         Gen.Json.Encode.call_.dict Gen.Basics.values_.identity (Elm.functionReduced "rec" encoder)
                     )
 
         -- An object with additionalProperties *and* normal `properties` fields.
-        Common.Dict dictValueType fields ->
+        Common.Dict additionalPropertiesType properties ->
             let
-                dictEncoder : CliMonad (Elm.Expression -> Elm.Expression)
-                dictEncoder =
-                    typeToEncoder qualify dictValueType
-                        |> CliMonad.map
-                            (\encoder ->
-                                Gen.Json.Encode.call_.dict Gen.Basics.values_.identity (Elm.functionReduced "rec" encoder)
-                            )
-
-                encoder_ : CliMonad (Elm.Expression -> Elm.Expression)
-                encoder_ =
-                    dictEncoder
-
-                -- (( Common.UnsafeName "additionalProperties", dictType )
-                --     :: fields
-                -- )
-                --     |> objectToAnnotation qualify { useMaybe = True }
+                allRequired : Bool
+                allRequired =
+                    List.all (\( _, { required } ) -> required) properties
             in
-            -- XXX: TODO
-            encoder_
+            properties
+                |> CliMonad.combineMap
+                    (\( key, field ) ->
+                        typeToEncoder qualify field.type_
+                            |> CliMonad.map
+                                (\encoder rec ->
+                                    let
+                                        fieldExpr : Elm.Expression
+                                        fieldExpr =
+                                            Elm.get (Common.toValueName key) rec
+
+                                        toTuple : Elm.Expression -> Elm.Expression
+                                        toTuple value =
+                                            Elm.tuple
+                                                (Elm.string (Common.unwrapUnsafe key))
+                                                (encoder value)
+                                    in
+                                    if allRequired then
+                                        toTuple fieldExpr
+
+                                    else if field.required then
+                                        Gen.Maybe.make_.just (toTuple fieldExpr)
+
+                                    else
+                                        Gen.Maybe.map toTuple fieldExpr
+                                )
+                    )
+                |> CliMonad.map2
+                    (\additionalPropertyEncoder toProperties ->
+                        \value ->
+                            if allRequired then
+                                Gen.Json.Encode.call_.object <|
+                                    Gen.List.call_.append
+                                        (Elm.list (List.map (\prop -> prop value) toProperties))
+                                        (Gen.List.call_.map
+                                            (Elm.fn (Elm.Arg.tuple (Elm.Arg.var "key") (Elm.Arg.var "value"))
+                                                (\( key, data ) ->
+                                                    Elm.tuple key (additionalPropertyEncoder data)
+                                                )
+                                            )
+                                            (Gen.Dict.toList (Elm.get "additionalProperties" value))
+                                        )
+
+                            else
+                                Gen.Json.Encode.call_.object <|
+                                    Gen.List.filterMap Gen.Basics.identity <|
+                                        List.map (\prop -> prop value) toProperties
+                    )
+                    (typeToEncoder qualify additionalPropertiesType)
 
         Common.Nullable t ->
             CliMonad.map
