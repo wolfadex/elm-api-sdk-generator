@@ -661,7 +661,11 @@ typeToAnnotationWithNullable qualify type_ =
             CliMonad.map Elm.Annotation.list (typeToAnnotationWithNullable qualify t)
 
         Common.Dict dictValueType [] ->
-            CliMonad.map (Elm.Annotation.dict Elm.Annotation.string) (typeToAnnotationWithNullable qualify dictValueType)
+            -- We do not use `Elm.Annotation.dict` here because it will NOT
+            -- result in `import Dict` being generated in the module, due to
+            -- a bug in elm-codegen.
+            CliMonad.map (Gen.Dict.annotation_.dict Elm.Annotation.string)
+                (typeToAnnotationWithNullable qualify dictValueType)
 
         Common.Dict dictValueType fields ->
             let
@@ -744,7 +748,10 @@ typeToAnnotationWithMaybe qualify type_ =
             CliMonad.map Elm.Annotation.list (typeToAnnotationWithMaybe qualify t)
 
         Common.Dict dictValueType [] ->
-            CliMonad.map (Elm.Annotation.dict Elm.Annotation.string)
+            -- We do not use `Elm.Annotation.dict` here because it will NOT
+            -- result in `import Dict` being generated in the module, due to
+            -- a bug in elm-codegen.
+            CliMonad.map (Gen.Dict.annotation_.dict Elm.Annotation.string)
                 (typeToAnnotationWithMaybe qualify dictValueType)
 
         Common.Dict dictValueType fields ->
