@@ -322,33 +322,49 @@ suite =
                                 type alias StringLists =
                                     Dict.Dict String (List String)
                         """
-                    , expectDeclarationBody "OnlyExtras"
-                        typesFile
-                        """
-                                type alias OnlyExtras =
-                                    Dict.Dict String String
-                                """
-                    , expectDeclarationBody "decodeOnlyExtras"
+                    , expectDeclarationBody "decodeStringLists"
                         jsonFile
                         """
-                                decodeOnlyExtras : Json.Decode.Decoder AdditionalProperties.Types.OnlyExtras
-                                decodeOnlyExtras =
-                                    Json.Decode.dict Json.Decode.string
+                                decodeStringLists : Json.Decode.Decoder AdditionalProperties.Types.StringLists
+                                decodeStringLists =
+                                    Json.Decode.dict (Json.Decode.list Json.Decode.string)
                         """
-                    , expectDeclarationBody "encodeOnlyExtras"
+                    , expectDeclarationBody "encodeStringLists"
                         jsonFile
                         """
-                                encodeOnlyExtras : AdditionalProperties.Types.OnlyExtras -> Json.Encode.Value
-                                encodeOnlyExtras =
-                                    Json.Encode.dict Basics.identity Json.Encode.string
+                                encodeStringLists : AdditionalProperties.Types.StringLists -> Json.Encode.Value
+                                encodeStringLists =
+                                    Json.Encode.dict Basics.identity (Json.Encode.list Json.Encode.string)
                         """
                     , expectDeclarationBody "VagueExtras"
                         typesFile
                         """
                                 type alias VagueExtras =
                                     { additionalProperties : Dict.Dict String Json.Encode.Value
-                                    , declaredProperty : Maybe String
+                                    , a : Maybe String
+                                    , b : String
                                     }
+                        """
+                    , expectDeclarationBody "encodeVagueExtras"
+                        jsonFile
+                        """
+encodeVagueExtras : AdditionalProperties.Types.VagueExtras -> Json.Encode.Value
+encodeVagueExtras rec =
+    Json.Encode.object
+        (List.append
+            (List.filterMap
+                Basics.identity
+                [ Maybe.map
+                    (\\mapUnpack -> ( "a", Json.Encode.string mapUnpack ))
+                    rec.a
+                , Just ( "b", Json.Encode.string rec.b )
+                ]
+            )
+            (List.map
+                (\\( key, value ) -> ( key, Basics.identity value ))
+                (Dict.toList rec.additionalProperties)
+            )
+        )
                         """
                     , expectDeclarationBody "Popularity"
                         typesFile
@@ -364,218 +380,6 @@ suite =
                     , expectDeclarationBody "decodePopularity" jsonFile expectedDecodePopularity
                     , expectDeclarationBody "encodePopularity" jsonFile expectedEncodePopularity
                     ]
-        , Test.test "[TEMPORARY] Encoder" <|
-            \() ->
-                let
-                    encodePopularity : { tags : { additionalProperties : Dict.Dict String { isPopular : Maybe Bool, name : String }, declaredProperty : String } } -> Json.Encode.Value
-                    encodePopularity rec =
-                        Json.Encode.object
-                            [ ( "tags"
-                              , Json.Encode.object
-                                    (List.append
-                                        [ ( "declaredProperty"
-                                          , Json.Encode.string rec.tags.declaredProperty
-                                          )
-                                        ]
-                                        (List.map
-                                            (\( key, value ) ->
-                                                ( key
-                                                , Json.Encode.object
-                                                    (List.filterMap
-                                                        Basics.identity
-                                                        [ Maybe.map
-                                                            (\mapUnpack ->
-                                                                ( "isPopular"
-                                                                , Json.Encode.bool mapUnpack
-                                                                )
-                                                            )
-                                                            value.isPopular
-                                                        , Just
-                                                            ( "name"
-                                                            , Json.Encode.string value.name
-                                                            )
-                                                        ]
-                                                    )
-                                                )
-                                            )
-                                            (Dict.toList rec.tags.additionalProperties)
-                                        )
-                                    )
-                              )
-                            ]
-
-                    testData : { tags : { additionalProperties : Dict.Dict String { isPopular : Maybe Bool, name : String }, declaredProperty : String } }
-                    testData =
-                        { tags =
-                            { additionalProperties =
-                                Dict.fromList
-                                    [ ( "bar", { isPopular = Nothing, name = "bar" } )
-                                    , ( "foo", { isPopular = Just True, name = "foo" } )
-                                    ]
-                            , declaredProperty = "declared"
-                            }
-                        }
-                in
-                Expect.equal (Json.Encode.encode 4 (encodePopularity testData))
-                    (unindent """
-                    {
-                        "tags": {
-                            "declaredProperty": "declared",
-                            "bar": {
-                                "name": "bar"
-                            },
-                            "foo": {
-                                "isPopular": true,
-                                "name": "foo"
-                            }
-                        }
-                    }""")
-        , Test.test "Decoder" <|
-            \() ->
-                let
-                    json : String
-                    json =
-                        """
-                        {
-                          "tags": {
-                            "declaredProperty": "declared",
-                            "foo": { "isPopular": true, "name": "foo" },
-                            "bar": { "name": "bar" }
-                          }
-                        }"""
-
-                    jsonDecodeAndMap :
-                        Json.Decode.Decoder a
-                        -> Json.Decode.Decoder (a -> value)
-                        -> Json.Decode.Decoder value
-                    jsonDecodeAndMap =
-                        Json.Decode.map2 (|>)
-
-                    decodeOptionalField : String -> Json.Decode.Decoder t -> Json.Decode.Decoder (Maybe t)
-                    decodeOptionalField key fieldDecoder =
-                        Json.Decode.andThen
-                            (\andThenUnpack ->
-                                if andThenUnpack then
-                                    Json.Decode.field
-                                        key
-                                        (Json.Decode.oneOf
-                                            [ Json.Decode.map Just fieldDecoder
-                                            , Json.Decode.null Nothing
-                                            ]
-                                        )
-
-                                else
-                                    Json.Decode.succeed Nothing
-                            )
-                            (Json.Decode.oneOf
-                                [ Json.Decode.map
-                                    (\_ -> True)
-                                    (Json.Decode.field key Json.Decode.value)
-                                , Json.Decode.succeed False
-                                ]
-                            )
-
-                    decoder : Json.Decode.Decoder { tags : { additionalProperties : Dict.Dict String { isPopular : Maybe Bool, name : String }, declaredProperty : String } }
-                    decoder =
-                        Json.Decode.succeed
-                            (\tags -> { tags = tags })
-                            |> jsonDecodeAndMap
-                                (Json.Decode.field "tags"
-                                    (Json.Decode.succeed
-                                        (\additionalProperties declaredProperty ->
-                                            { additionalProperties =
-                                                additionalProperties
-                                            , declaredProperty =
-                                                declaredProperty
-                                            }
-                                        )
-                                        |> jsonDecodeAndMap
-                                            -- Decode the additionalProperties first.
-                                            (Json.Decode.keyValuePairs Json.Decode.value
-                                                |> Json.Decode.andThen
-                                                    (\keyValuePairs ->
-                                                        keyValuePairs
-                                                            |> List.filterMap
-                                                                (\( k, v ) ->
-                                                                    -- Skip keys of declared properties
-                                                                    if List.member k [ "declaredProperty" ] then
-                                                                        Nothing
-
-                                                                    else
-                                                                        let
-                                                                            -- Decodes each additionalProperties value
-                                                                            addPropValueDecoder : Json.Decode.Decoder { isPopular : Maybe Bool, name : String }
-                                                                            addPropValueDecoder =
-                                                                                Json.Decode.succeed
-                                                                                    (\isPopular name ->
-                                                                                        { isPopular = isPopular
-                                                                                        , name = name
-                                                                                        }
-                                                                                    )
-                                                                                    |> jsonDecodeAndMap (decodeOptionalField "isPopular" Json.Decode.bool)
-                                                                                    |> jsonDecodeAndMap (Json.Decode.field "name" Json.Decode.string)
-                                                                        in
-                                                                        case Json.Decode.decodeValue addPropValueDecoder v of
-                                                                            Err decodeError ->
-                                                                                Just (Err ("Field '" ++ k ++ "': " ++ Json.Decode.errorToString decodeError))
-
-                                                                            Ok value ->
-                                                                                Just (Ok ( k, value ))
-                                                                )
-                                                            |> (\resultPairs ->
-                                                                    let
-                                                                        fieldErrors : List String
-                                                                        fieldErrors =
-                                                                            resultPairs
-                                                                                |> List.filterMap
-                                                                                    (\res ->
-                                                                                        case res of
-                                                                                            Ok _ ->
-                                                                                                Nothing
-
-                                                                                            Err error ->
-                                                                                                Just error
-                                                                                    )
-                                                                    in
-                                                                    if List.isEmpty fieldErrors then
-                                                                        resultPairs
-                                                                            |> List.filterMap Result.toMaybe
-                                                                            |> Dict.fromList
-                                                                            |> Json.Decode.succeed
-
-                                                                    else
-                                                                        [ "Encountered errors while decoding additionalProperties:\n- "
-                                                                        , fieldErrors |> String.join "\n\n- "
-                                                                        , "\n"
-                                                                        ]
-                                                                            |> String.concat
-                                                                            |> Json.Decode.fail
-                                                               )
-                                                    )
-                                            )
-                                        -- Decode all the declared properties now
-                                        |> jsonDecodeAndMap
-                                            (Json.Decode.field "declaredProperty" Json.Decode.string)
-                                    )
-                                )
-                in
-                case Json.Decode.decodeString decoder json of
-                    Err err ->
-                        err
-                            |> Json.Decode.errorToString
-                            |> Expect.fail
-
-                    Ok stuff ->
-                        Expect.equal stuff
-                            { tags =
-                                { additionalProperties =
-                                    Dict.fromList
-                                        [ ( "bar", { isPopular = Nothing, name = "bar" } )
-                                        , ( "foo", { isPopular = Just True, name = "foo" } )
-                                        ]
-                                , declaredProperty = "declared"
-                                }
-                            }
         ]
 
 
@@ -591,6 +395,10 @@ additionalPropertiesOasString =
   "components": {
     "schemas": {
       "Popularity": {
+        "type": "object",
+        "required": [
+          "tags"
+        ],
         "properties": {
           "tags": {
             "additionalProperties": {
@@ -617,11 +425,7 @@ additionalPropertiesOasString =
             ],
             "type": "object"
           }
-        },
-        "required": [
-          "tags"
-        ],
-        "type": "object"
+        }
       },
       "StringLists": {
         "type": "object",
@@ -632,17 +436,15 @@ additionalPropertiesOasString =
           }
         }
       },
-      "OnlyExtras": {
-        "type": "object",
-        "additionalProperties": {
-          "type": "string"
-        }
-      },
       "VagueExtras": {
         "type": "object",
+        "required": ["b"],
         "additionalProperties": true,
         "properties": {
-          "declaredProperty": {
+          "a": {
+            "type": "string"
+          },
+          "b": {
             "type": "string"
           }
         }
@@ -764,7 +566,7 @@ decodePopularity =
                                                         |> Json.Decode.succeed
 
                                                 else
-                                                    [ \"\"\"Encountered errors while decoding additionalProperties:
+                                                    [ \"\"\"Errors while decoding additionalProperties:
 - \"\"\"
                                                     , String.join
                                                         \"\"\"

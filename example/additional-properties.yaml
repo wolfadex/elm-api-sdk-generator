@@ -34,24 +34,10 @@ components:
     VagueExtras:
       type: object
       properties:
-        declaredProperty:
+        a:
           type: string
+        b:
+          type: string
+      required:
+        - b
       additionalProperties: true
-
-paths:
-  "/api/popularity":
-    summary: Get Popularity
-    description:
-    get:
-      operationId: getPopularity
-      responses:
-        200:
-          $ref: "#/components/schemas/Popularity"
-  "/api/list":
-    summary: Get StringLists
-    description:
-    get:
-      operationId: getStringLists
-      responses:
-        200:
-          $ref: "#/components/schemas/StringLists"

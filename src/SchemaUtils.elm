@@ -995,23 +995,23 @@ typeToEncoder qualify type_ =
                 |> CliMonad.map2
                     (\additionalPropertyEncoder toProperties ->
                         \value ->
-                            if allRequired then
-                                Gen.Json.Encode.call_.object <|
-                                    Gen.List.call_.append
-                                        (Elm.list (List.map (\prop -> prop value) toProperties))
-                                        (Gen.List.call_.map
-                                            (Elm.fn (Elm.Arg.tuple (Elm.Arg.var "key") (Elm.Arg.var "value"))
-                                                (\( key, data ) ->
-                                                    Elm.tuple key (additionalPropertyEncoder data)
-                                                )
-                                            )
-                                            (Gen.Dict.toList (Elm.get "additionalProperties" value))
-                                        )
+                            Gen.Json.Encode.call_.object
+                                (Gen.List.call_.append
+                                    (if allRequired then
+                                        Elm.list (List.map (\prop -> prop value) toProperties)
 
-                            else
-                                Gen.Json.Encode.call_.object <|
-                                    Gen.List.filterMap Gen.Basics.identity <|
-                                        List.map (\prop -> prop value) toProperties
+                                     else
+                                        Gen.List.filterMap Gen.Basics.identity (List.map (\prop -> prop value) toProperties)
+                                    )
+                                    (Gen.List.call_.map
+                                        (Elm.fn (Elm.Arg.tuple (Elm.Arg.var "key") (Elm.Arg.var "value"))
+                                            (\( key, data ) ->
+                                                Elm.tuple key (additionalPropertyEncoder data)
+                                            )
+                                        )
+                                        (Gen.Dict.toList (Elm.get "additionalProperties" value))
+                                    )
+                                )
                     )
                     (typeToEncoder qualify additionalPropertiesType)
 
@@ -1228,7 +1228,10 @@ typeToDecoder qualify type_ =
                                             (\( key, _ ) arg -> ( Common.toValueName key, arg ))
                                             (properties
                                                 ++ [ ( Common.UnsafeName "additionalProperties"
-                                                     , { type_ = dictValueType, required = True, documentation = Nothing }
+                                                     , { type_ = dictValueType
+                                                       , required = True
+                                                       , documentation = Nothing
+                                                       }
                                                      )
                                                    ]
                                             )
@@ -1310,13 +1313,16 @@ typeToDecoder qualify type_ =
                                                                             Elm.ifThen (Elm.apply Gen.List.values_.isEmpty [ fieldErrors ])
                                                                                 (resultPairs
                                                                                     |> Elm.Op.pipe
-                                                                                        (Elm.apply Gen.List.values_.filterMap [ Gen.Result.values_.toMaybe ])
+                                                                                        (Elm.apply Gen.List.values_.filterMap
+                                                                                            [ Gen.Result.values_.toMaybe ]
+                                                                                        )
                                                                                     |> Elm.Op.pipe Gen.Dict.values_.fromList
                                                                                     |> Elm.Op.pipe Gen.Json.Decode.values_.succeed
                                                                                 )
                                                                                 (Elm.list
-                                                                                    [ Elm.string "Encountered errors while decoding additionalProperties:\n- "
-                                                                                    , Elm.apply Gen.String.values_.join [ Elm.string "\n\n- ", fieldErrors ]
+                                                                                    [ Elm.string "Errors while decoding additionalProperties:\n- "
+                                                                                    , Elm.apply Gen.String.values_.join
+                                                                                        [ Elm.string "\n\n- ", fieldErrors ]
                                                                                     , Elm.string "\n"
                                                                                     ]
                                                                                     |> Elm.Op.pipe Gen.String.values_.concat
