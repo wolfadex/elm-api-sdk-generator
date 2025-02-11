@@ -1253,107 +1253,108 @@ typeToDecoder qualify type_ =
                         prevExpr
                             |> Elm.Op.pipe
                                 (Elm.apply Gen.OpenApi.Common.values_.jsonDecodeAndMap
-                                    [ Gen.Json.Decode.keyValuePairs Gen.Json.Decode.value ]
-                                    |> Elm.Op.pipe
-                                        (Elm.apply Gen.Json.Decode.values_.andThen
-                                            [ Elm.fn (Elm.Arg.var "keyValuePairs")
-                                                (\keyValuePairs ->
-                                                    keyValuePairs
-                                                        |> Elm.Op.pipe
-                                                            (Elm.apply
-                                                                Gen.List.values_.filterMap
-                                                                [ Elm.fn (Elm.Arg.tuple (Elm.Arg.var "key") (Elm.Arg.var "jsonValue"))
-                                                                    (\( key, jsonValue ) ->
-                                                                        let
-                                                                            propertyNames : Elm.Expression
-                                                                            propertyNames =
-                                                                                properties
-                                                                                    |> List.map (Tuple.first >> Common.unwrapUnsafe >> Elm.string)
-                                                                                    |> Elm.list
-                                                                        in
-                                                                        Elm.ifThen (Elm.apply Gen.List.values_.member [ key, propertyNames ])
-                                                                            Elm.nothing
-                                                                            (Elm.Let.letIn
-                                                                                (\additionalPropertyDecoder ->
-                                                                                    Elm.Case.result
-                                                                                        (Elm.apply Gen.Json.Decode.values_.decodeValue
-                                                                                            [ additionalPropertyDecoder, jsonValue ]
-                                                                                        )
-                                                                                        { err =
-                                                                                            ( "decodeError"
-                                                                                            , \decodeError ->
-                                                                                                let
-                                                                                                    decoderErrorAsString : Elm.Expression
-                                                                                                    decoderErrorAsString =
-                                                                                                        Elm.apply Gen.Json.Decode.values_.errorToString
-                                                                                                            [ decodeError ]
-                                                                                                in
-                                                                                                Elm.just
-                                                                                                    (Gen.Result.make_.err
-                                                                                                        (decoderErrorAsString
-                                                                                                            |> Elm.Op.append (Elm.string "': ")
-                                                                                                            |> Elm.Op.append key
-                                                                                                            |> Elm.Op.append (Elm.string "Field '")
+                                    [ Gen.Json.Decode.keyValuePairs Gen.Json.Decode.value
+                                        |> Elm.Op.pipe
+                                            (Elm.apply Gen.Json.Decode.values_.andThen
+                                                [ Elm.fn (Elm.Arg.var "keyValuePairs")
+                                                    (\keyValuePairs ->
+                                                        keyValuePairs
+                                                            |> Elm.Op.pipe
+                                                                (Elm.apply
+                                                                    Gen.List.values_.filterMap
+                                                                    [ Elm.fn (Elm.Arg.tuple (Elm.Arg.var "key") (Elm.Arg.var "jsonValue"))
+                                                                        (\( key, jsonValue ) ->
+                                                                            let
+                                                                                propertyNames : Elm.Expression
+                                                                                propertyNames =
+                                                                                    properties
+                                                                                        |> List.map (Tuple.first >> Common.unwrapUnsafe >> Elm.string)
+                                                                                        |> Elm.list
+                                                                            in
+                                                                            Elm.ifThen (Elm.apply Gen.List.values_.member [ key, propertyNames ])
+                                                                                Elm.nothing
+                                                                                (Elm.Let.letIn
+                                                                                    (\additionalPropertyDecoder ->
+                                                                                        Elm.Case.result
+                                                                                            (Elm.apply Gen.Json.Decode.values_.decodeValue
+                                                                                                [ additionalPropertyDecoder, jsonValue ]
+                                                                                            )
+                                                                                            { err =
+                                                                                                ( "decodeError"
+                                                                                                , \decodeError ->
+                                                                                                    let
+                                                                                                        decoderErrorAsString : Elm.Expression
+                                                                                                        decoderErrorAsString =
+                                                                                                            Elm.apply Gen.Json.Decode.values_.errorToString
+                                                                                                                [ decodeError ]
+                                                                                                    in
+                                                                                                    Elm.just
+                                                                                                        (Gen.Result.make_.err
+                                                                                                            (decoderErrorAsString
+                                                                                                                |> Elm.Op.append (Elm.string "': ")
+                                                                                                                |> Elm.Op.append key
+                                                                                                                |> Elm.Op.append (Elm.string "Field '")
+                                                                                                            )
                                                                                                         )
-                                                                                                    )
-                                                                                            )
-                                                                                        , ok =
-                                                                                            ( "decodedValue"
-                                                                                            , \decodedValue ->
-                                                                                                Elm.just
-                                                                                                    (Gen.Result.make_.ok (Elm.tuple key decodedValue))
-                                                                                            )
-                                                                                        }
-                                                                                )
-                                                                                |> Elm.Let.value "additionalPropertyDecoder" dictValueDecoder
-                                                                                |> Elm.Let.toExpression
-                                                                            )
-                                                                    )
-                                                                ]
-                                                            )
-                                                        |> Elm.Op.pipe
-                                                            (Elm.fn
-                                                                (Elm.Arg.var "resultPairs")
-                                                                (\resultPairs ->
-                                                                    Elm.Let.letIn
-                                                                        (\fieldErrors ->
-                                                                            Elm.ifThen (Elm.apply Gen.List.values_.isEmpty [ fieldErrors ])
-                                                                                (resultPairs
-                                                                                    |> Elm.Op.pipe
-                                                                                        (Elm.apply Gen.List.values_.filterMap
-                                                                                            [ Gen.Result.values_.toMaybe ]
-                                                                                        )
-                                                                                    |> Elm.Op.pipe Gen.Dict.values_.fromList
-                                                                                    |> Elm.Op.pipe Gen.Json.Decode.values_.succeed
-                                                                                )
-                                                                                (Elm.list
-                                                                                    [ Elm.string "Errors while decoding additionalProperties:\n- "
-                                                                                    , Elm.apply Gen.String.values_.join
-                                                                                        [ Elm.string "\n\n- ", fieldErrors ]
-                                                                                    , Elm.string "\n"
-                                                                                    ]
-                                                                                    |> Elm.Op.pipe Gen.String.values_.concat
-                                                                                    |> Elm.Op.pipe Gen.Json.Decode.values_.fail
-                                                                                )
-                                                                        )
-                                                                        |> Elm.Let.value "fieldErrors"
-                                                                            (Elm.apply Gen.List.values_.filterMap
-                                                                                [ Elm.fn (Elm.Arg.var "field")
-                                                                                    (\field ->
-                                                                                        Elm.Case.result field
-                                                                                            { ok = ( "_", \_ -> Elm.nothing )
-                                                                                            , err = ( "error", \error -> Elm.just error )
+                                                                                                )
+                                                                                            , ok =
+                                                                                                ( "decodedValue"
+                                                                                                , \decodedValue ->
+                                                                                                    Elm.just
+                                                                                                        (Gen.Result.make_.ok (Elm.tuple key decodedValue))
+                                                                                                )
                                                                                             }
                                                                                     )
-                                                                                , resultPairs
-                                                                                ]
-                                                                            )
-                                                                        |> Elm.Let.toExpression
+                                                                                    |> Elm.Let.value "additionalPropertyDecoder" dictValueDecoder
+                                                                                    |> Elm.Let.toExpression
+                                                                                )
+                                                                        )
+                                                                    ]
                                                                 )
-                                                            )
-                                                )
-                                            ]
-                                        )
+                                                            |> Elm.Op.pipe
+                                                                (Elm.fn
+                                                                    (Elm.Arg.var "resultPairs")
+                                                                    (\resultPairs ->
+                                                                        Elm.Let.letIn
+                                                                            (\fieldErrors ->
+                                                                                Elm.ifThen (Elm.apply Gen.List.values_.isEmpty [ fieldErrors ])
+                                                                                    (resultPairs
+                                                                                        |> Elm.Op.pipe
+                                                                                            (Elm.apply Gen.List.values_.filterMap
+                                                                                                [ Gen.Result.values_.toMaybe ]
+                                                                                            )
+                                                                                        |> Elm.Op.pipe Gen.Dict.values_.fromList
+                                                                                        |> Elm.Op.pipe Gen.Json.Decode.values_.succeed
+                                                                                    )
+                                                                                    (Elm.list
+                                                                                        [ Elm.string "Errors while decoding additionalProperties:\n- "
+                                                                                        , Elm.apply Gen.String.values_.join
+                                                                                            [ Elm.string "\n\n- ", fieldErrors ]
+                                                                                        , Elm.string "\n"
+                                                                                        ]
+                                                                                        |> Elm.Op.pipe Gen.String.values_.concat
+                                                                                        |> Elm.Op.pipe Gen.Json.Decode.values_.fail
+                                                                                    )
+                                                                            )
+                                                                            |> Elm.Let.value "fieldErrors"
+                                                                                (Elm.apply Gen.List.values_.filterMap
+                                                                                    [ Elm.fn (Elm.Arg.var "field")
+                                                                                        (\field ->
+                                                                                            Elm.Case.result field
+                                                                                                { ok = ( "_", \_ -> Elm.nothing )
+                                                                                                , err = ( "error", \error -> Elm.just error )
+                                                                                                }
+                                                                                        )
+                                                                                    , resultPairs
+                                                                                    ]
+                                                                                )
+                                                                            |> Elm.Let.toExpression
+                                                                    )
+                                                                )
+                                                    )
+                                                ]
+                                            )
+                                    ]
                                 )
                     )
                     (typeToDecoder qualify dictValueType)
