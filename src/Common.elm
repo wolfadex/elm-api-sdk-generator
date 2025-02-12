@@ -319,7 +319,7 @@ type Type
     | Null
     | List Type
       -- The type declared in additionalProperties, and a list of normal properties
-    | Dict Type Object
+    | Dict { type_ : Type, documentation : Maybe String } Object
     | OneOf TypeName OneOfData
     | Enum (List UnsafeName)
     | Value

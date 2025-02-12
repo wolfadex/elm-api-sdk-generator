@@ -2,7 +2,6 @@ module Test.OpenApi.Generate exposing (suite)
 
 import Char
 import CliMonad
-import Dict
 import Elm
 import Elm.Parser
 import Elm.Syntax.Node
@@ -13,7 +12,6 @@ import FastDict
 import FastSet
 import Fuzz
 import Json.Decode
-import Json.Encode
 import List.Extra
 import OpenApi
 import OpenApi.Config
@@ -129,6 +127,12 @@ expectDeclarationBody type_ module_ expectedBody =
         |> Maybe.map
             (\actualBody ->
                 Expect.equal actualBody (unindent expectedBody)
+                    |> Expect.onFail
+                        ("Actual value:\n"
+                            ++ actualBody
+                            ++ "\n\nExpected value:\n"
+                            ++ unindent expectedBody
+                        )
             )
         |> Maybe.withDefault
             (Expect.fail
@@ -363,10 +367,10 @@ encodeVagueExtras rec =
             )
         )
                         """
-                    , expectDeclarationBody "Popularity"
+                    , expectDeclarationBody "Taxonomy"
                         typesFile
                         """
-                                type alias Popularity =
+                                type alias Taxonomy =
                                     { tags :
                                         { additionalProperties :
                                             Dict.Dict String { isPopular : Maybe Bool, name : String }
@@ -374,8 +378,8 @@ encodeVagueExtras rec =
                                         }
                                     }
                         """
-                    , expectDeclarationBody "decodePopularity" jsonFile expectedDecodePopularity
-                    , expectDeclarationBody "encodePopularity" jsonFile expectedEncodePopularity
+                    , expectDeclarationBody "decodeTaxonomy" jsonFile expectedDecodeTaxonomy
+                    , expectDeclarationBody "encodeTaxonomy" jsonFile expectedEncodeTaxonomy
                     ]
         ]
 
@@ -391,14 +395,16 @@ additionalPropertiesOasString =
   },
   "components": {
     "schemas": {
-      "Popularity": {
+      "Taxonomy": {
         "type": "object",
         "required": [
           "tags"
         ],
         "properties": {
           "tags": {
+            "type": "object",
             "additionalProperties": {
+              "type": "object",
               "properties": {
                 "isPopular": {
                   "type": "boolean"
@@ -409,8 +415,7 @@ additionalPropertiesOasString =
               },
               "required": [
                 "name"
-              ],
-              "type": "object"
+              ]
             },
             "properties": {
               "declaredProperty": {
@@ -419,8 +424,7 @@ additionalPropertiesOasString =
             },
             "required": [
               "declaredProperty"
-            ],
-            "type": "object"
+            ]
           }
         }
       },
@@ -451,11 +455,11 @@ additionalPropertiesOasString =
 }"""
 
 
-expectedDecodePopularity : String
-expectedDecodePopularity =
+expectedDecodeTaxonomy : String
+expectedDecodeTaxonomy =
     """
-decodePopularity : Json.Decode.Decoder AdditionalProperties.Types.Popularity
-decodePopularity =
+decodeTaxonomy : Json.Decode.Decoder AdditionalProperties.Types.Taxonomy
+decodeTaxonomy =
     Json.Decode.succeed
         (\\tags -> { tags = tags })
         |> OpenApi.Common.jsonDecodeAndMap
@@ -582,11 +586,11 @@ decodePopularity =
                                 """
 
 
-expectedEncodePopularity : String
-expectedEncodePopularity =
+expectedEncodeTaxonomy : String
+expectedEncodeTaxonomy =
     """
-encodePopularity : AdditionalProperties.Types.Popularity -> Json.Encode.Value
-encodePopularity rec =
+encodeTaxonomy : AdditionalProperties.Types.Taxonomy -> Json.Encode.Value
+encodeTaxonomy rec =
     Json.Encode.object
         [ ( "tags"
           , Json.Encode.object

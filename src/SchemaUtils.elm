@@ -524,11 +524,33 @@ objectSchemaToType qualify subSchema =
         declaredAndAdditionalProperties : CliMonad { type_ : Common.Type, documentation : Maybe String } -> CliMonad { type_ : Common.Type, documentation : Maybe String }
         declaredAndAdditionalProperties additionalSchema =
             CliMonad.andThen2
-                (\declaredProperties_ dictValueType ->
+                (\declaredProperties_ additionalProperties ->
                     case declaredProperties_.type_ of
                         Common.Object properties ->
-                            { type_ = Common.Dict dictValueType.type_ properties
-                            , documentation = dictValueType.documentation
+                            { type_ = Common.Dict additionalProperties properties
+                            , documentation =
+                                [ declaredProperties_.documentation
+                                , additionalProperties.documentation
+                                    |> Maybe.map
+                                        (\doc ->
+                                            case String.lines doc of
+                                                [] ->
+                                                    " - additionalProperties"
+
+                                                first :: [] ->
+                                                    " - additionalProperties: " ++ first
+
+                                                first :: rest ->
+                                                    " - additionalProperties: "
+                                                        ++ first
+                                                        ++ "\n\n   Each value in the dict is a record of:"
+                                                        ++ (rest
+                                                                |> List.map (\line -> "    " ++ line)
+                                                                |> String.join "\n"
+                                                           )
+                                        )
+                                ]
+                                    |> joinIfNotEmpty "\n\n"
                             }
                                 |> CliMonad.succeed
 
@@ -547,7 +569,10 @@ objectSchemaToType qualify subSchema =
         -- additionalProperties, but the GitHub API spec uses it. Since the type
         -- of the properties could be anything, we keep them as Json Values.
         Just (Json.Schema.Definitions.BooleanSchema True) ->
-            CliMonad.succeed { type_ = Common.Value, documentation = Nothing }
+            CliMonad.succeed
+                { type_ = Common.Value
+                , documentation = Just "Arbitrary data whose type is not defined by the API spec"
+                }
                 |> declaredAndAdditionalProperties
 
         -- The object contains an additionalProperties entry that describes the
@@ -660,25 +685,28 @@ typeToAnnotationWithNullable qualify type_ =
         Common.List t ->
             CliMonad.map Elm.Annotation.list (typeToAnnotationWithNullable qualify t)
 
-        Common.Dict dictValueType [] ->
+        Common.Dict additionalProperties [] ->
             -- We do not use `Elm.Annotation.dict` here because it will NOT
             -- result in `import Dict` being generated in the module, due to
             -- a bug in elm-codegen.
             CliMonad.map (Gen.Dict.annotation_.dict Elm.Annotation.string)
-                (typeToAnnotationWithNullable qualify dictValueType)
+                (typeToAnnotationWithNullable qualify additionalProperties.type_)
 
-        Common.Dict dictValueType fields ->
+        Common.Dict additionalProperties fields ->
             let
-                additionalProperties : ( Common.UnsafeName, { type_ : Common.Type, required : Bool, documentation : Maybe String } )
-                additionalProperties =
+                additionalPropertiesField :
+                    ( Common.UnsafeName
+                    , { type_ : Common.Type, required : Bool, documentation : Maybe String }
+                    )
+                additionalPropertiesField =
                     ( Common.UnsafeName "additionalProperties"
-                    , { type_ = Common.Dict dictValueType []
+                    , { type_ = Common.Dict additionalProperties []
                       , required = True
-                      , documentation = Nothing
+                      , documentation = additionalProperties.documentation
                       }
                     )
             in
-            (additionalProperties :: fields)
+            (additionalPropertiesField :: fields)
                 |> objectToAnnotation qualify { useMaybe = False }
 
         Common.Enum variants ->
@@ -747,25 +775,25 @@ typeToAnnotationWithMaybe qualify type_ =
         Common.List t ->
             CliMonad.map Elm.Annotation.list (typeToAnnotationWithMaybe qualify t)
 
-        Common.Dict dictValueType [] ->
+        Common.Dict additionalProperties [] ->
             -- We do not use `Elm.Annotation.dict` here because it will NOT
             -- result in `import Dict` being generated in the module, due to
             -- a bug in elm-codegen.
             CliMonad.map (Gen.Dict.annotation_.dict Elm.Annotation.string)
-                (typeToAnnotationWithMaybe qualify dictValueType)
+                (typeToAnnotationWithMaybe qualify additionalProperties.type_)
 
-        Common.Dict dictValueType fields ->
+        Common.Dict additionalProperties fields ->
             let
-                additionalProperties : ( Common.UnsafeName, { type_ : Common.Type, required : Bool, documentation : Maybe String } )
-                additionalProperties =
+                additionalPropertiesField : ( Common.UnsafeName, { type_ : Common.Type, required : Bool, documentation : Maybe String } )
+                additionalPropertiesField =
                     ( Common.UnsafeName "additionalProperties"
-                    , { type_ = Common.Dict dictValueType []
+                    , { type_ = Common.Dict additionalProperties []
                       , required = True
-                      , documentation = Nothing
+                      , documentation = additionalProperties.documentation
                       }
                     )
             in
-            (additionalProperties :: fields)
+            (additionalPropertiesField :: fields)
                 |> objectToAnnotation qualify { useMaybe = True }
 
         Common.Enum variants ->
@@ -957,16 +985,16 @@ typeToEncoder qualify type_ =
                     )
 
         -- An object with additionalProperties (the type of those properties is
-        -- `dictValueType`) and no normal `properties` fields: A simple Dict.
-        Common.Dict additionalPropertiesType [] ->
-            typeToEncoder qualify additionalPropertiesType
+        -- `additionalProperties`) and no normal `properties` fields: A simple Dict.
+        Common.Dict additionalProperties [] ->
+            typeToEncoder qualify additionalProperties.type_
                 |> CliMonad.map
                     (\encoder ->
                         Gen.Json.Encode.call_.dict Gen.Basics.values_.identity (Elm.functionReduced "rec" encoder)
                     )
 
         -- An object with additionalProperties *and* normal `properties` fields.
-        Common.Dict additionalPropertiesType properties ->
+        Common.Dict additionalProperties properties ->
             let
                 allRequired : Bool
                 allRequired =
@@ -1020,7 +1048,7 @@ typeToEncoder qualify type_ =
                                     )
                                 )
                     )
-                    (typeToEncoder qualify additionalPropertiesType)
+                    (typeToEncoder qualify additionalProperties.type_)
 
         Common.Nullable t ->
             CliMonad.map
@@ -1196,11 +1224,11 @@ typeToDecoder qualify type_ =
             CliMonad.map Gen.Json.Decode.list
                 (typeToDecoder qualify t)
 
-        Common.Dict dictValueType [] ->
+        Common.Dict additionalProperties [] ->
             CliMonad.map Gen.Json.Decode.dict
-                (typeToDecoder qualify dictValueType)
+                (typeToDecoder qualify additionalProperties.type_)
 
-        Common.Dict dictValueType properties ->
+        Common.Dict additionalProperties properties ->
             properties
                 |> List.foldl
                     (\( key, field ) prevExprRes ->
@@ -1235,7 +1263,7 @@ typeToDecoder qualify type_ =
                                             (\( key, _ ) arg -> ( Common.toValueName key, arg ))
                                             (properties
                                                 ++ [ ( Common.UnsafeName "additionalProperties"
-                                                     , { type_ = dictValueType
+                                                     , { type_ = additionalProperties.type_
                                                        , required = True
                                                        , documentation = Nothing
                                                        }
@@ -1354,7 +1382,7 @@ typeToDecoder qualify type_ =
                                     ]
                                 )
                     )
-                    (typeToDecoder qualify dictValueType)
+                    (typeToDecoder qualify additionalProperties.type_)
 
         Common.Enum variants ->
             CliMonad.enumName variants
