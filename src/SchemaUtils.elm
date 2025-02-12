@@ -784,7 +784,10 @@ typeToAnnotationWithMaybe qualify type_ =
 
         Common.Dict additionalProperties fields ->
             let
-                additionalPropertiesField : ( Common.UnsafeName, { type_ : Common.Type, required : Bool, documentation : Maybe String } )
+                additionalPropertiesField :
+                    ( Common.UnsafeName
+                    , { type_ : Common.Type, required : Bool, documentation : Maybe String }
+                    )
                 additionalPropertiesField =
                     ( Common.UnsafeName "additionalProperties"
                     , { type_ = Common.Dict additionalProperties []
