@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -   Support for params being passed in the header
 -   Support for `type : null`
 -   Support for `const : <value>`
+-   [Support for `additionalProperties` in objects](https://github.com/wolfadex/elm-open-api-cli/pull/184). [Adam DiCarlo](https://github.com/adamdicarlo0)
 
 ## [0.7.0] - 2024-09-23
 
