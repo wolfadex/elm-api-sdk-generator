@@ -2,6 +2,8 @@ module Example exposing (..)
 
 -- import BimcloudApi20232AlphaRelease
 
+import AdditionalProperties.Json
+import AdditionalProperties.Types
 import AirlineCodeLookupApi.Api
 import AirlineCodeLookupApi.Types
 import BasicRouter.Json
@@ -9,6 +11,7 @@ import BasicRouter.Types
 import Browser
 import DbFahrplanApi.Api
 import DbFahrplanApi.Types
+import Dict
 import GithubV3RestApi.Api
 import GithubV3RestApi.Types
 import Json.Decode
@@ -141,6 +144,20 @@ view _ =
 -- Assert the structure of generated types by declaring instances of them.
 
 
+{-| AdditionalProperties
+-}
+additionalPropertiesTaxonomy : AdditionalProperties.Types.Taxonomy
+additionalPropertiesTaxonomy =
+    { tags =
+        { additionalProperties =
+            Dict.fromList
+                [ ( "Mystery", { name = "Mystery", isPopular = Just True } )
+                ]
+        , category = Just "Genres"
+        }
+    }
+
+
 {-| BasicRouter
 -}
 basicRouterValuePropositionSummary : BasicRouter.Types.ValuePropositionSummary
@@ -165,17 +182,3 @@ recursiveAllofRefsGrandChild =
     , child = ""
     , grandChild = ""
     }
-
-
-
--- Assert decoders return correct types with alias functions.
-
-
-decodeRecursiveAllofRefsChild : Json.Decode.Decoder RecursiveAllofRefs.Types.Child
-decodeRecursiveAllofRefsChild =
-    RecursiveAllofRefs.Json.decodeChild
-
-
-decodeRecursiveAllofRefsGrandChild : Json.Decode.Decoder RecursiveAllofRefs.Types.GrandChild
-decodeRecursiveAllofRefsGrandChild =
-    RecursiveAllofRefs.Json.decodeGrandChild

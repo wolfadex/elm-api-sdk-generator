@@ -22,16 +22,19 @@ import Elm.Annotation
 import Elm.Arg
 import Elm.Case
 import Elm.Declare
+import Elm.Let
 import Elm.Op
 import Elm.ToString
 import FastDict
 import Gen.Basics
 import Gen.Bytes
+import Gen.Dict
 import Gen.Json.Decode
 import Gen.Json.Encode
 import Gen.List
 import Gen.Maybe
 import Gen.OpenApi.Common
+import Gen.Result
 import Gen.String
 import Json.Decode
 import Json.Encode
@@ -468,8 +471,10 @@ oneOfType types =
             )
 
 
-objectSchemaToType : Bool -> Json.Schema.Definitions.SubSchema -> CliMonad { type_ : Common.Type, documentation : Maybe String }
-objectSchemaToType qualify subSchema =
+{-| Transform an object schema's named and inherited (via $ref) properties to a type
+-}
+objectSchemaToTypeHelp : Bool -> Json.Schema.Definitions.SubSchema -> CliMonad { type_ : Common.Type, documentation : Maybe String }
+objectSchemaToTypeHelp qualify subSchema =
     CliMonad.map2
         (\schemaProps allOfProps ->
             let
@@ -507,6 +512,74 @@ objectSchemaToType qualify subSchema =
         )
         (subSchemaToProperties qualify subSchema)
         (subSchemaAllOfToProperties qualify subSchema)
+
+
+objectSchemaToType : Bool -> Json.Schema.Definitions.SubSchema -> CliMonad { type_ : Common.Type, documentation : Maybe String }
+objectSchemaToType qualify subSchema =
+    let
+        declaredProperties : CliMonad { type_ : Common.Type, documentation : Maybe String }
+        declaredProperties =
+            objectSchemaToTypeHelp qualify subSchema
+
+        declaredAndAdditionalProperties : CliMonad { type_ : Common.Type, documentation : Maybe String } -> CliMonad { type_ : Common.Type, documentation : Maybe String }
+        declaredAndAdditionalProperties additionalSchema =
+            CliMonad.andThen2
+                (\declaredProperties_ additionalProperties ->
+                    case declaredProperties_.type_ of
+                        Common.Object properties ->
+                            { type_ = Common.Dict additionalProperties properties
+                            , documentation =
+                                [ declaredProperties_.documentation
+                                , additionalProperties.documentation
+                                    |> Maybe.map
+                                        (\doc ->
+                                            case String.lines doc of
+                                                [] ->
+                                                    " - additionalProperties"
+
+                                                first :: [] ->
+                                                    " - additionalProperties: " ++ first
+
+                                                first :: rest ->
+                                                    " - additionalProperties: "
+                                                        ++ first
+                                                        ++ "\n\n   Each value in the dict is a record of:    "
+                                                        ++ String.join "\n    " rest
+                                        )
+                                ]
+                                    |> joinIfNotEmpty "\n\n"
+                            }
+                                |> CliMonad.succeed
+
+                        _ ->
+                            CliMonad.fail "Internal error: non-Object from objectSchemaToTypeHelp"
+                )
+                declaredProperties
+                additionalSchema
+    in
+    case subSchema.additionalProperties of
+        -- Object contains only specified properties, not arbitrary extra ones.
+        Just (Json.Schema.Definitions.BooleanSchema False) ->
+            declaredProperties
+
+        -- It's unclear whether "true" is *technically* an acceptable value for
+        -- additionalProperties, but the GitHub API spec uses it. Since the type
+        -- of the properties could be anything, we keep them as Json Values.
+        Just (Json.Schema.Definitions.BooleanSchema True) ->
+            CliMonad.succeed
+                { type_ = Common.Value
+                , documentation = Just "Arbitrary data whose type is not defined by the API spec"
+                }
+                |> declaredAndAdditionalProperties
+
+        -- The object contains an additionalProperties entry that describes the
+        -- type of the values, which may have arbitrary keys, in the object.
+        Just additionalPropertiesSchema ->
+            schemaToType qualify additionalPropertiesSchema
+                |> declaredAndAdditionalProperties
+
+        Nothing ->
+            declaredProperties
 
 
 joinIfNotEmpty : String -> List (Maybe String) -> Maybe String
@@ -609,6 +682,30 @@ typeToAnnotationWithNullable qualify type_ =
         Common.List t ->
             CliMonad.map Elm.Annotation.list (typeToAnnotationWithNullable qualify t)
 
+        Common.Dict additionalProperties [] ->
+            -- We do not use `Elm.Annotation.dict` here because it will NOT
+            -- result in `import Dict` being generated in the module, due to
+            -- a bug in elm-codegen.
+            CliMonad.map (Gen.Dict.annotation_.dict Elm.Annotation.string)
+                (typeToAnnotationWithNullable qualify additionalProperties.type_)
+
+        Common.Dict additionalProperties fields ->
+            let
+                additionalPropertiesField :
+                    ( Common.UnsafeName
+                    , { type_ : Common.Type, required : Bool, documentation : Maybe String }
+                    )
+                additionalPropertiesField =
+                    ( Common.UnsafeName "additionalProperties"
+                    , { type_ = Common.Dict additionalProperties []
+                      , required = True
+                      , documentation = additionalProperties.documentation
+                      }
+                    )
+            in
+            (additionalPropertiesField :: fields)
+                |> objectToAnnotation qualify { useMaybe = False }
+
         Common.Enum variants ->
             CliMonad.enumName variants
                 |> CliMonad.andThen
@@ -674,6 +771,30 @@ typeToAnnotationWithMaybe qualify type_ =
 
         Common.List t ->
             CliMonad.map Elm.Annotation.list (typeToAnnotationWithMaybe qualify t)
+
+        Common.Dict additionalProperties [] ->
+            -- We do not use `Elm.Annotation.dict` here because it will NOT
+            -- result in `import Dict` being generated in the module, due to
+            -- a bug in elm-codegen.
+            CliMonad.map (Gen.Dict.annotation_.dict Elm.Annotation.string)
+                (typeToAnnotationWithMaybe qualify additionalProperties.type_)
+
+        Common.Dict additionalProperties fields ->
+            let
+                additionalPropertiesField :
+                    ( Common.UnsafeName
+                    , { type_ : Common.Type, required : Bool, documentation : Maybe String }
+                    )
+                additionalPropertiesField =
+                    ( Common.UnsafeName "additionalProperties"
+                    , { type_ = Common.Dict additionalProperties []
+                      , required = True
+                      , documentation = additionalProperties.documentation
+                      }
+                    )
+            in
+            (additionalPropertiesField :: fields)
+                |> objectToAnnotation qualify { useMaybe = True }
 
         Common.Enum variants ->
             CliMonad.enumName variants
@@ -863,6 +984,72 @@ typeToEncoder qualify type_ =
                         Gen.Json.Encode.call_.list (Elm.functionReduced "rec" encoder)
                     )
 
+        -- An object with additionalProperties (the type of those properties is
+        -- `additionalProperties`) and no normal `properties` fields: A simple Dict.
+        Common.Dict additionalProperties [] ->
+            typeToEncoder qualify additionalProperties.type_
+                |> CliMonad.map
+                    (\encoder ->
+                        Gen.Json.Encode.call_.dict Gen.Basics.values_.identity (Elm.functionReduced "rec" encoder)
+                    )
+
+        -- An object with additionalProperties *and* normal `properties` fields.
+        Common.Dict additionalProperties properties ->
+            let
+                allRequired : Bool
+                allRequired =
+                    List.all (\( _, { required } ) -> required) properties
+            in
+            properties
+                |> CliMonad.combineMap
+                    (\( key, field ) ->
+                        typeToEncoder qualify field.type_
+                            |> CliMonad.map
+                                (\encoder rec ->
+                                    let
+                                        fieldExpr : Elm.Expression
+                                        fieldExpr =
+                                            Elm.get (Common.toValueName key) rec
+
+                                        toTuple : Elm.Expression -> Elm.Expression
+                                        toTuple value =
+                                            Elm.tuple
+                                                (Elm.string (Common.unwrapUnsafe key))
+                                                (encoder value)
+                                    in
+                                    if allRequired then
+                                        toTuple fieldExpr
+
+                                    else if field.required then
+                                        Gen.Maybe.make_.just (toTuple fieldExpr)
+
+                                    else
+                                        Gen.Maybe.map toTuple fieldExpr
+                                )
+                    )
+                |> CliMonad.map2
+                    (\additionalPropertyEncoder toProperties ->
+                        \value ->
+                            Gen.Json.Encode.call_.object
+                                (Gen.List.call_.append
+                                    (if allRequired then
+                                        Elm.list (List.map (\prop -> prop value) toProperties)
+
+                                     else
+                                        Gen.List.filterMap Gen.Basics.identity (List.map (\prop -> prop value) toProperties)
+                                    )
+                                    (Gen.List.call_.map
+                                        (Elm.fn (Elm.Arg.tuple (Elm.Arg.var "key") (Elm.Arg.var "value"))
+                                            (\( key, data ) ->
+                                                Elm.tuple key (additionalPropertyEncoder data)
+                                            )
+                                        )
+                                        (Gen.Dict.toList (Elm.get "additionalProperties" value))
+                                    )
+                                )
+                    )
+                    (typeToEncoder qualify additionalProperties.type_)
+
         Common.Nullable t ->
             CliMonad.map
                 (\encoder nullableValue ->
@@ -1036,6 +1223,166 @@ typeToDecoder qualify type_ =
         Common.List t ->
             CliMonad.map Gen.Json.Decode.list
                 (typeToDecoder qualify t)
+
+        Common.Dict additionalProperties [] ->
+            CliMonad.map Gen.Json.Decode.dict
+                (typeToDecoder qualify additionalProperties.type_)
+
+        Common.Dict additionalProperties properties ->
+            properties
+                |> List.foldl
+                    (\( key, field ) prevExprRes ->
+                        CliMonad.map2
+                            (\internalDecoder prevExpr ->
+                                Elm.Op.pipe
+                                    (Elm.apply
+                                        Gen.OpenApi.Common.values_.jsonDecodeAndMap
+                                        [ if field.required then
+                                            Gen.Json.Decode.field (Common.unwrapUnsafe key) internalDecoder
+
+                                          else
+                                            Gen.OpenApi.Common.decodeOptionalField
+                                                (Common.unwrapUnsafe key)
+                                                internalDecoder
+                                        ]
+                                    )
+                                    prevExpr
+                            )
+                            (typeToDecoder qualify field.type_)
+                            prevExprRes
+                    )
+                    (CliMonad.succeed
+                        (Gen.Json.Decode.succeed
+                            (Elm.function
+                                (List.map (\( key, _ ) -> ( Common.toValueName key, Nothing )) properties
+                                    ++ [ ( Common.toValueName (Common.UnsafeName "additionalProperties"), Nothing ) ]
+                                )
+                                (\args ->
+                                    Elm.record
+                                        (List.map2
+                                            (\( key, _ ) arg -> ( Common.toValueName key, arg ))
+                                            (properties
+                                                ++ [ ( Common.UnsafeName "additionalProperties"
+                                                     , { type_ = additionalProperties.type_
+                                                       , required = True
+                                                       , documentation = Nothing
+                                                       }
+                                                     )
+                                                   ]
+                                            )
+                                            args
+                                        )
+                                )
+                            )
+                        )
+                    )
+                |> CliMonad.map2
+                    (\dictValueDecoder prevExpr ->
+                        prevExpr
+                            |> Elm.Op.pipe
+                                (Elm.apply Gen.OpenApi.Common.values_.jsonDecodeAndMap
+                                    [ Gen.Json.Decode.keyValuePairs Gen.Json.Decode.value
+                                        |> Elm.Op.pipe
+                                            (Elm.apply Gen.Json.Decode.values_.andThen
+                                                [ Elm.fn (Elm.Arg.var "keyValuePairs")
+                                                    (\keyValuePairs ->
+                                                        Gen.List.call_.filterMap
+                                                            (Elm.fn (Elm.Arg.tuple (Elm.Arg.var "key") (Elm.Arg.var "jsonValue"))
+                                                                (\( key, jsonValue ) ->
+                                                                    let
+                                                                        propertyNames : Elm.Expression
+                                                                        propertyNames =
+                                                                            properties
+                                                                                |> List.map (Tuple.first >> Common.unwrapUnsafe >> Elm.string)
+                                                                                |> Elm.list
+                                                                    in
+                                                                    Elm.ifThen (Elm.apply Gen.List.values_.member [ key, propertyNames ])
+                                                                        Elm.nothing
+                                                                        (Elm.Let.letIn
+                                                                            (\additionalPropertyDecoder ->
+                                                                                Elm.Case.result
+                                                                                    (Elm.apply Gen.Json.Decode.values_.decodeValue
+                                                                                        [ additionalPropertyDecoder, jsonValue ]
+                                                                                    )
+                                                                                    { err =
+                                                                                        ( "decodeError"
+                                                                                        , \decodeError ->
+                                                                                            let
+                                                                                                decoderErrorAsString : Elm.Expression
+                                                                                                decoderErrorAsString =
+                                                                                                    Elm.apply Gen.Json.Decode.values_.errorToString
+                                                                                                        [ decodeError ]
+                                                                                            in
+                                                                                            Elm.just
+                                                                                                (Gen.Result.make_.err
+                                                                                                    (decoderErrorAsString
+                                                                                                        |> Elm.Op.append (Elm.string "': ")
+                                                                                                        |> Elm.Op.append key
+                                                                                                        |> Elm.Op.append (Elm.string "Field '")
+                                                                                                    )
+                                                                                                )
+                                                                                        )
+                                                                                    , ok =
+                                                                                        ( "decodedValue"
+                                                                                        , \decodedValue ->
+                                                                                            Elm.just
+                                                                                                (Gen.Result.make_.ok (Elm.tuple key decodedValue))
+                                                                                        )
+                                                                                    }
+                                                                            )
+                                                                            |> Elm.Let.value "additionalPropertyDecoder" dictValueDecoder
+                                                                            |> Elm.Let.toExpression
+                                                                        )
+                                                                )
+                                                            )
+                                                            keyValuePairs
+                                                            |> Elm.Op.pipe
+                                                                (Elm.fn
+                                                                    (Elm.Arg.var "resultPairs")
+                                                                    (\resultPairs ->
+                                                                        Elm.Let.letIn
+                                                                            (\fieldErrors ->
+                                                                                Elm.ifThen (Elm.apply Gen.List.values_.isEmpty [ fieldErrors ])
+                                                                                    (resultPairs
+                                                                                        |> Elm.Op.pipe
+                                                                                            (Elm.apply Gen.List.values_.filterMap
+                                                                                                [ Gen.Result.values_.toMaybe ]
+                                                                                            )
+                                                                                        |> Elm.Op.pipe Gen.Dict.values_.fromList
+                                                                                        |> Elm.Op.pipe Gen.Json.Decode.values_.succeed
+                                                                                    )
+                                                                                    (Elm.list
+                                                                                        [ Elm.string "Errors while decoding additionalProperties:\n- "
+                                                                                        , Elm.apply Gen.String.values_.join
+                                                                                            [ Elm.string "\n\n- ", fieldErrors ]
+                                                                                        , Elm.string "\n"
+                                                                                        ]
+                                                                                        |> Elm.Op.pipe Gen.String.values_.concat
+                                                                                        |> Elm.Op.pipe Gen.Json.Decode.values_.fail
+                                                                                    )
+                                                                            )
+                                                                            |> Elm.Let.value "fieldErrors"
+                                                                                (Elm.apply Gen.List.values_.filterMap
+                                                                                    [ Elm.fn (Elm.Arg.var "field")
+                                                                                        (\field ->
+                                                                                            Elm.Case.result field
+                                                                                                { ok = ( "_", \_ -> Elm.nothing )
+                                                                                                , err = ( "error", \error -> Elm.just error )
+                                                                                                }
+                                                                                        )
+                                                                                    , resultPairs
+                                                                                    ]
+                                                                                )
+                                                                            |> Elm.Let.toExpression
+                                                                    )
+                                                                )
+                                                    )
+                                                ]
+                                            )
+                                    ]
+                                )
+                    )
+                    (typeToDecoder qualify additionalProperties.type_)
 
         Common.Enum variants ->
             CliMonad.enumName variants

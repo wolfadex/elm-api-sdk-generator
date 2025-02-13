@@ -1,0 +1,52 @@
+openapi: 3.0.1
+info:
+  title: "Additional Properties"
+  version: "1"
+components:
+  schemas:
+    Taxonomy:
+      description: Taxonomy data
+      type: object
+      properties:
+        tags:
+          description: Tag information
+          type: object
+          properties:
+            category:
+              description: Category of these tags
+              type: string
+          required:
+            - declaredProperty
+          additionalProperties:
+            description: Dictionary of tags, keyed by machine id
+            type: object
+            properties:
+              name:
+                description: Name of the tag
+                type: string
+              isPopular:
+                description: Whether the tag is popular
+                type: boolean
+            required:
+              - name
+      required:
+        - tags
+    StringLists:
+      description: Lists of strings stored in arbitrary object keys
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string
+    VagueExtras:
+      type: object
+      properties:
+        a:
+          description: Something
+          type: string
+        b:
+          description: Something else
+          type: string
+      required:
+        - b
+      additionalProperties: true

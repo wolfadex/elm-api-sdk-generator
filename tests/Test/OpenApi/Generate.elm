@@ -16,6 +16,31 @@ import Test exposing (Test)
 import Utils
 
 
+moduleNames : List { a | moduleName : List String } -> String
+moduleNames modules =
+    modules
+        |> List.map (\{ moduleName } -> String.join "." moduleName)
+        |> String.Extra.toSentenceOxford
+
+
+expectModuleName : { a | moduleName : List String } -> List String -> Expect.Expectation
+expectModuleName file expectedPath =
+    Expect.equal file.moduleName expectedPath
+        |> Expect.onFail
+            ("Expected to generate a file with the module name "
+                ++ String.join "." expectedPath
+                ++ " but I found "
+                ++ moduleNames [ file ]
+            )
+
+
+composeExpectations : List Expect.Expectation -> Expect.Expectation
+composeExpectations expectations =
+    Expect.all
+        (List.map (\x -> always x) expectations)
+        ()
+
+
 suite : Test
 suite =
     Test.describe "open api generation"
@@ -75,7 +100,17 @@ suite =
                                     |> Maybe.withDefault "Carl"
                                     |> List.singleton
 
-                            genFiles : Result CliMonad.Message ( List { moduleName : List String, declarations : FastDict.Dict String { group : String, declaration : Elm.Declaration } }, { warnings : List CliMonad.Message, requiredPackages : FastSet.Set String } )
+                            genFiles :
+                                Result
+                                    CliMonad.Message
+                                    ( List
+                                        { moduleName : List String
+                                        , declarations : FastDict.Dict String { group : String, declaration : Elm.Declaration }
+                                        }
+                                    , { warnings : List CliMonad.Message
+                                      , requiredPackages : FastSet.Set String
+                                      }
+                                    )
                             genFiles =
                                 OpenApi.Generate.files
                                     { namespace = namespace
@@ -92,47 +127,36 @@ suite =
 
                             Ok ( files, _ ) ->
                                 case files of
-                                    [] ->
-                                        Expect.fail "Expected to generate 3 files but found none"
-
-                                    [ file ] ->
-                                        Expect.fail ("Expected to generate 3 files but found 1: " ++ String.join "." file.moduleName)
-
-                                    [ file1, file2 ] ->
-                                        Expect.fail ("Expected to generate 3 files but found 2: " ++ String.join "." file1.moduleName ++ ", " ++ String.join "." file2.moduleName)
-
                                     [ jsonFile, apiFile, helperFile ] ->
                                         let
                                             jsonPath : List String
                                             jsonPath =
                                                 namespace ++ [ "Json" ]
+
+                                            apiPath : List String
+                                            apiPath =
+                                                namespace ++ [ "Api" ]
+
+                                            helperPath : List String
+                                            helperPath =
+                                                namespace ++ [ "OpenApi" ]
                                         in
-                                        if jsonFile.moduleName /= jsonPath then
-                                            Expect.fail ("Expected to generate a file with the module name " ++ String.join "." jsonPath ++ " but I found " ++ String.join "." jsonFile.moduleName)
+                                        composeExpectations
+                                            [ expectModuleName jsonFile jsonPath
+                                            , expectModuleName apiFile apiPath
+                                            , expectModuleName helperFile helperPath
+                                            ]
 
-                                        else
-                                            let
-                                                apiPath : List String
-                                                apiPath =
-                                                    namespace ++ [ "Api" ]
-                                            in
-                                            if apiFile.moduleName /= apiPath then
-                                                Expect.fail ("Expected to generate a file with the module name " ++ String.join "." apiPath ++ " but I found " ++ String.join "." apiFile.moduleName)
+                                    [] ->
+                                        Expect.fail "Expected to generate 3 files but found none"
 
-                                            else
-                                                let
-                                                    helperPath : List String
-                                                    helperPath =
-                                                        namespace ++ [ "OpenApi" ]
-                                                in
-                                                if helperFile.moduleName /= helperPath then
-                                                    Expect.fail ("Expected to generate a file with the module name " ++ String.join "." helperPath ++ " but I found " ++ String.join "." helperFile.moduleName)
-
-                                                else
-                                                    Expect.pass
-
-                                    _ :: _ :: _ :: extraFiles ->
-                                        Expect.fail ("Expected to generate 3 files but found extra: " ++ String.Extra.toSentenceOxford (List.map (\{ moduleName } -> String.join "." moduleName) extraFiles))
+                                    _ ->
+                                        Expect.fail
+                                            ("Expected to generate 3 files but found "
+                                                ++ (List.length files |> String.fromInt)
+                                                ++ ": "
+                                                ++ moduleNames files
+                                            )
 
         -- Known bug: https://github.com/wolfadex/elm-open-api-cli/issues/48
         , Test.test "The OAS title: service API (params in:body)" <|
