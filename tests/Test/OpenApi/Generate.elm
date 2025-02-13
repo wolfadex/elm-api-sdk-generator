@@ -19,7 +19,7 @@ import Utils
 moduleNames : List { a | moduleName : List String } -> String
 moduleNames modules =
     modules
-        |> List.map (.moduleName >> String.join ".")
+        |> List.map (\{ moduleName } -> String.join "." moduleName)
         |> String.Extra.toSentenceOxford
 
 
