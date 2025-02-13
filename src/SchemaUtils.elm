@@ -543,11 +543,8 @@ objectSchemaToType qualify subSchema =
                                                 first :: rest ->
                                                     " - additionalProperties: "
                                                         ++ first
-                                                        ++ "\n\n   Each value in the dict is a record of:"
-                                                        ++ (rest
-                                                                |> List.map (\line -> "    " ++ line)
-                                                                |> String.join "\n"
-                                                           )
+                                                        ++ "\n\n   Each value in the dict is a record of:    "
+                                                        ++ String.join "\n    " rest
                                         )
                                 ]
                                     |> joinIfNotEmpty "\n\n"
